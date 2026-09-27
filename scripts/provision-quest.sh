@@ -30,6 +30,10 @@ fi
 echo "Granting background launch and usage access..."
 "${ADB[@]}" shell appops set "$LOADER" SYSTEM_ALERT_WINDOW allow
 "${ADB[@]}" shell appops set "$LOADER" GET_USAGE_STATS allow
+# Android saves app-op changes ~10 s later: a reboot or power cut before that would lose them.
+if ! "${ADB[@]}" shell appops write-settings >/dev/null; then
+    echo "Warning: could not save the grants right away. Restart the headset only from its power menu (a clean shutdown saves them), not with adb reboot or a forced power-off." >&2
+fi
 "${ADB[@]}" shell dumpsys deviceidle whitelist "+$LOADER" >/dev/null
 
 echo "Setting target to $TARGET..."
@@ -41,5 +45,9 @@ echo "Setting target to $TARGET..."
 # reaches it from now on, and starts the watchdog without waiting for a reboot.
 echo "Starting the loader..."
 "${ADB[@]}" shell am start -n "$LOADER/.ui.MainActivity"
+
+# Android saves the battery optimisation exemption ~5 s after it is set, and it can't be forced.
+echo "Waiting for the headset to save the settings..."
+sleep 6
 
 echo "Done. $TARGET will start after boot and be relaunched if it exits or crashes."

@@ -36,7 +36,11 @@ The script installs the loader and grants it:
 | `appops set <pkg> GET_USAGE_STATS allow` | Lets the watchdog see the foreground app, to detect exits and crashes. Without it, the target is brought back to the front every 30 s instead. |
 | `dumpsys deviceidle whitelist +<pkg>` | Keeps battery optimisation from stopping the service. |
 
+Right after the two `appops` grants it runs `appops write-settings`, which saves them to disk at once. Android otherwise saves app-op changes about 10 s later, so a reboot or power cut straight after provisioning would lose them. If saving fails, the script warns and carries on; then restart the headset only from its power menu (a clean shutdown saves them), not with `adb reboot` or a forced power-off.
+
 It then sets the target and opens the loader once, which starts the watchdog and makes sure `BOOT_COMPLETED` is delivered from then on.
+
+Android saves the battery optimisation exemption about 5 s after it is set, and nothing can make it save sooner, so the script waits a few seconds before it finishes.
 
 ## Commands over adb
 
