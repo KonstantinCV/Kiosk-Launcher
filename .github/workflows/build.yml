@@ -1,7 +1,24 @@
 name: Build Android App
 
 on:
+  push:
+  pull_request:
   workflow_dispatch:
+    inputs:
+      target_package:
+        description: 'Package the loader starts before one is picked on the headset (optional)'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+# A newer push to the same branch or pull request makes the older run pointless. The event is in
+# the group so a manual run (workflow_dispatch, e.g. with target_package) and a push to the same
+# branch don't cancel each other.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -21,11 +38,135 @@ jobs:
     - name: Grant execute permission to gradlew
       run: chmod +x gradlew
 
-    - name: Build with Gradle
-      run: ./gradlew assembleDebug
+    # Robolectric downloads its Android SDK jar (~150 MB) into ~/.m2, which the Gradle cache above
+    # doesn't cover
+    - name: Cache Robolectric SDK jars
+      uses: actions/cache@v4
+      with:
+        path: ~/.m2/repository/org/robolectric
+        key: robolectric-${{ hashFiles('app/build.gradle') }}
+
+    - name: Unit tests, lint and debug build
+      env:
+        TARGET_PACKAGE: ${{ github.event.inputs.target_package }}
+      run: ./gradlew testDebugUnitTest lintDebug assembleDebug :testapp:assembleDebug -PloaderTargetPackage="$TARGET_PACKAGE"
+
+    - name: Upload test and lint reports
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: reports
+        path: |
+          app/build/reports/
+          app/build/test-results/
+        if-no-files-found: ignore
 
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
         name: app-debug
         path: app/build/outputs/apk/debug/app-debug.apk
+
+    # Signed release APK for headsets, only when the signing secrets are set (see README). Without
+    # them, e.g. on pull requests from forks, the step does nothing and the build is as before.
+    - name: Signed release build
+      id: release
+      env:
+        LOADER_KEYSTORE_BASE64: ${{ secrets.LOADER_KEYSTORE_BASE64 }}
+        LOADER_KEYSTORE_PASSWORD: ${{ secrets.LOADER_KEYSTORE_PASSWORD }}
+        LOADER_KEY_ALIAS: ${{ secrets.LOADER_KEY_ALIAS }}
+        LOADER_KEY_PASSWORD: ${{ secrets.LOADER_KEY_PASSWORD }}
+        TARGET_PACKAGE: ${{ github.event.inputs.target_package }}
+      run: |
+        if [ -z "$LOADER_KEYSTORE_BASE64" ]; then
+          echo "No signing secrets, skipping the signed release build."
+          exit 0
+        fi
+        export LOADER_KEYSTORE="$RUNNER_TEMP/loader-release.jks"
+        trap 'rm -f "$LOADER_KEYSTORE"' EXIT
+        printf '%s' "$LOADER_KEYSTORE_BASE64" | base64 -d > "$LOADER_KEYSTORE"
+        ./gradlew assembleRelease -PloaderTargetPackage="$TARGET_PACKAGE"
+        echo "signed=true" >> "$GITHUB_OUTPUT"
+
+    - name: Upload signed release APK
+      if: steps.release.outputs.signed == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: app-release
+        path: app/build/outputs/apk/release/app-release.apk
+        if-no-files-found: error
+
+    # Test-only apps for the e2e job, flattened so the artifact holds just the two APKs
+    - name: Collect E2E target APKs
+      run: |
+        mkdir -p e2e-target-apks
+        cp testapp/build/outputs/apk/launcher/debug/testapp-launcher-debug.apk \
+           testapp/build/outputs/apk/vr/debug/testapp-vr-debug.apk \
+           e2e-target-apks/
+
+    - name: Upload E2E target APKs
+      uses: actions/upload-artifact@v4
+      with:
+        name: e2e-target-apks
+        path: e2e-target-apks/*.apk
+        if-no-files-found: error
+
+  # Black-box tests of the exact APK uploaded above, on AOSP emulators (see e2e/README.md)
+  e2e:
+    name: E2E (API ${{ matrix.api-level }})
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        # 29: the loader's minSdk. 34: Android 14, what Meta Horizon OS is built on.
+        api-level: [29, 34]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Enable KVM
+      run: |
+        echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+        sudo udevadm control --reload-rules
+        sudo udevadm trigger --name-match=kvm
+
+    - name: Download loader APK
+      uses: actions/download-artifact@v4
+      with:
+        name: app-debug
+        path: e2e-apks/loader
+
+    - name: Download E2E target APKs
+      uses: actions/download-artifact@v4
+      with:
+        name: e2e-target-apks
+        path: e2e-apks/targets
+
+    # The runner runs each script line on its own, so the command stays on one line
+    - name: Run E2E suite
+      uses: reactivecircus/android-emulator-runner@v2
+      with:
+        api-level: ${{ matrix.api-level }}
+        target: default
+        arch: x86_64
+        disable-animations: true
+        emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -no-snapshot
+        script: bash e2e/run.sh --loader-apk e2e-apks/loader/app-debug.apk --target-apk e2e-apks/targets/testapp-launcher-debug.apk --vr-target-apk e2e-apks/targets/testapp-vr-debug.apk --results e2e-results
+
+    - name: Add results to the job summary
+      if: always()
+      run: |
+        if [ -f e2e-results/summary.md ]; then
+          cat e2e-results/summary.md >> "$GITHUB_STEP_SUMMARY"
+        fi
+
+    - name: Upload E2E results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: e2e-results-api${{ matrix.api-level }}
+        path: e2e-results
+        if-no-files-found: ignore

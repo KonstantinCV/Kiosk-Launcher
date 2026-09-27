@@ -1,32 +1,22 @@
 package com.osamaalek.kiosklauncher.util
 
-import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import com.osamaalek.kiosklauncher.model.AppInfo
 
+object AppsUtil {
 
-class AppsUtil {
-
-    companion object {
-
-        fun getAllApps(context: Context): List<AppInfo> {
-            val packageManager: PackageManager = context.packageManager
-            val appsList = ArrayList<AppInfo>()
-            val i = Intent(Intent.ACTION_MAIN, null)
-            i.addCategory(Intent.CATEGORY_LAUNCHER)
-            val allApps = packageManager.queryIntentActivities(i, 0)
-            for (ri in allApps) {
-                val app = AppInfo(
-                    ri.loadLabel(packageManager),
-                    ri.activityInfo.packageName,
-                    ri.activityInfo.loadIcon(packageManager)
-                )
-                appsList.add(app)
+    /** Launchable apps, including Quest VR apps, without the loader itself. */
+    fun getAllApps(context: Context): List<AppInfo> {
+        val pm = context.packageManager
+        val categories = listOf(Intent.CATEGORY_LAUNCHER, TargetLauncher.CATEGORY_VR)
+        return categories
+            .flatMap { category ->
+                pm.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(category), 0)
             }
-            return appsList
-        }
-
+            .distinctBy { it.activityInfo.packageName }
+            .filter { it.activityInfo.packageName != context.packageName }
+            .map { AppInfo(it.loadLabel(pm), it.activityInfo.packageName, it.activityInfo.loadIcon(pm)) }
+            .sortedBy { it.label.toString().lowercase() }
     }
 }

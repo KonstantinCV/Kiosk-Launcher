@@ -1,13 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- No policies: the admin receiver only exists so the app can optionally be made device owner. -->
 <device-admin>
-    <uses-policies>
-        <limit-password />
-        <watch-login />
-        <reset-password />
-        <force-lock />
-        <wipe-data />
-        <expire-password />
-        <encrypted-storage />
-        <disable-camera />
-    </uses-policies>
+    <uses-policies />
 </device-admin>

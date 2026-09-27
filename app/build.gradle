@@ -3,42 +3,72 @@ plugins {
     id 'org.jetbrains.kotlin.android'
 }
 
+// Package the loader starts on first boot, before anyone picks an app on the headset.
+// Pass it at build time: ./gradlew assembleRelease -PloaderTargetPackage=com.example.headjackapp
+def loaderTargetPackage = project.findProperty('loaderTargetPackage') ?: ''
+
+// Release signing, so a newer build installs over an older one on a headset without losing the
+// loader's settings. The keystore is never committed: pass it in environment variables (CI takes
+// them from GitHub secrets) or Gradle properties. Without them the release APK is unsigned.
+def signingValue = { String name -> System.getenv(name) ?: project.findProperty(name) }
+def releaseKeystore = signingValue('LOADER_KEYSTORE')
+
 android {
     namespace 'com.osamaalek.kiosklauncher'
-    compileSdk 32
+    compileSdk 35
 
     defaultConfig {
         applicationId "com.osamaalek.kiosklauncher"
-        minSdk 23
-        targetSdk 32
-        versionCode 1
-        versionName "1.0"
+        minSdk 29
+        // Meta Horizon OS is built on Android 14 (API 34)
+        targetSdk 34
+        versionCode 2
+        versionName "2.0"
 
-        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField "String", "DEFAULT_TARGET_PACKAGE", "\"${loaderTargetPackage}\""
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    signingConfigs {
+        if (releaseKeystore) {
+            release {
+                storeFile file(releaseKeystore)
+                storePassword signingValue('LOADER_KEYSTORE_PASSWORD')
+                keyAlias signingValue('LOADER_KEY_ALIAS')
+                keyPassword signingValue('LOADER_KEY_PASSWORD')
+            }
+        }
     }
 
     buildTypes {
         release {
+            if (releaseKeystore) {
+                signingConfig signingConfigs.release
+            }
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
     }
     kotlinOptions {
-        jvmTarget = '1.8'
+        jvmTarget = '17'
+    }
+    testOptions {
+        // Robolectric tests read the merged manifest (package name, targetSdk) from this
+        unitTests.includeAndroidResources = true
     }
 }
 
 dependencies {
-
-    implementation 'androidx.core:core-ktx:1.7.0'
-    implementation 'androidx.appcompat:appcompat:1.6.0-alpha01'
-    implementation 'com.google.android.material:material:1.6.1'
-    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+    implementation 'androidx.core:core-ktx:1.13.1'
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+    implementation 'androidx.recyclerview:recyclerview:1.3.2'
     testImplementation 'junit:junit:4.13.2'
-    androidTestImplementation 'androidx.test.ext:junit:1.1.3'
-    androidTestImplementation 'androidx.test.espresso:espresso-core:3.4.0'
+    testImplementation 'org.robolectric:robolectric:4.17'
 }

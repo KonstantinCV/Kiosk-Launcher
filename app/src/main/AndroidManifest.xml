@@ -2,37 +2,82 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Lets the watchdog start the target app from the background (Android 10+).
+         Granted once over adb: appops set <pkg> SYSTEM_ALERT_WINDOW allow -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <!-- Lets the watchdog see which app is in the foreground.
+         Granted once over adb: appops set <pkg> GET_USAGE_STATS allow -->
     <uses-permission
-        android:name="android.permission.QUERY_ALL_PACKAGES"
-        tools:ignore="QueryAllPackagesPermission" />
-    <uses-permission android:name="android.permission.INTERNET" />
+        android:name="android.permission.PACKAGE_USAGE_STATS"
+        tools:ignore="ProtectedPermissions" />
+
+    <!-- Package visibility for the app picker: regular launcher apps and Quest VR apps -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="com.oculus.intent.category.VR" />
+        </intent>
+    </queries>
+
     <application
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.KioskLauncher"
-        tools:targetApi="31">
+        android:theme="@style/Theme.KioskLauncher">
+
         <activity
             android:name=".ui.MainActivity"
-            android:clearTaskOnLaunch="true"
-            android:configChanges="orientation|keyboardHidden|screenSize"
             android:exported="true"
-            android:launchMode="singleTask"
-            android:lockTaskMode="if_whitelisted"
-            android:stateNotNeeded="true">
+            android:launchMode="singleTask">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-
                 <category android:name="android.intent.category.LAUNCHER" />
-                <category android:name="android.intent.category.HOME" />
-                <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".ui.AppPickerActivity"
+            android:exported="false"
+            android:label="@string/picker_title" />
+
+        <service
+            android:name=".service.WatchdogService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Kiosk loader: keeps the selected app running and relaunches it after it exits or crashes" />
+        </service>
+
+        <receiver
+            android:name=".receiver.BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Provisioning commands over adb. WRITE_SECURE_SETTINGS is held by the adb shell
+             but can't be obtained by regular apps, so only adb (or the system) can send these. -->
+        <receiver
+            android:name=".receiver.AdminCommandReceiver"
+            android:exported="true"
+            android:permission="android.permission.WRITE_SECURE_SETTINGS" />
+
+        <!-- Optional: only used if the app is provisioned as device owner -->
         <receiver
             android:name=".MyDeviceAdminReceiver"
             android:exported="true"

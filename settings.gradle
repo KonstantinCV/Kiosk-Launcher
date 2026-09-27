@@ -13,4 +13,4 @@ dependencyResolutionManagement {
     }
 }
 rootProject.name = "Kiosk Launcher"
-include ':app'
+include ':app', ':testapp'
