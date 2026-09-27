@@ -13,9 +13,11 @@ on:
 permissions:
   contents: read
 
-# A newer push to the same branch or pull request makes the older run pointless
+# A newer push to the same branch or pull request makes the older run pointless. The event is in
+# the group so a manual run (workflow_dispatch, e.g. with target_package) and a push to the same
+# branch don't cancel each other.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
