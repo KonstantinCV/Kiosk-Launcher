@@ -58,10 +58,17 @@ class MainActivity : LoaderActivity() {
         findViewById<Button>(R.id.button_launch_now).setOnClickListener {
             TargetLauncher.launch(this, config.targetPackage)
         }
-        enabledSwitch.setOnCheckedChangeListener { _, checked -> config.enabled = checked }
+        // Only the user's changes are written. The switch doesn't save and restore its state: a
+        // recreated screen would restore a copy that an adb ENABLE/DISABLE may have made stale,
+        // and write it back. refresh() shows the setting, which the check keeps from being
+        // written again. A click listener would miss the thumb being dragged across.
+        enabledSwitch.isSaveEnabled = false
+        enabledSwitch.setOnCheckedChangeListener { _, checked ->
+            if (checked != config.enabled) config.enabled = checked
+        }
 
         graceSeek.min = LoaderConfig.MIN_GRACE_SECONDS
-        graceSeek.max = GRACE_SLIDER_MAX_SECONDS
+        graceSeek.max = LoaderConfig.MAX_GRACE_SECONDS
         graceSeek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
                 if (fromUser) config.graceSeconds = progress
@@ -135,7 +142,6 @@ class MainActivity : LoaderActivity() {
     }
 
     companion object {
-        private const val GRACE_SLIDER_MAX_SECONDS = 60
         private const val PAUSE_MS = 30 * 60_000L
     }
 }
