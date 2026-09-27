@@ -582,6 +582,18 @@ pid_not() {
     [[ "$(pid_of "$1")" != "$2" ]]
 }
 
+# has_pid PKG: the app has a running process
+has_pid() {
+    [[ -n "$(pid_of "$1")" ]]
+}
+
+# in_front_and_running PKG: PKG is in front and its process is up. dumpsys can report an activity
+# in front while Android is still starting its process, so a pid read right after is_foreground
+# alone may come back empty.
+in_front_and_running() {
+    is_foreground "$1" && has_pid "$1"
+}
+
 package_installed() {
     adb_ shell pm path "$1" >/dev/null 2>&1
 }
@@ -773,9 +785,12 @@ expect_foreground() {
     fail "$what not in the foreground after ${timeout} s (foreground: ${fg:-none})"
 }
 
-# relaunched_since SINCE PKG: the watchdog logged a relaunch of PKG after SINCE, and PKG is resumed
+# relaunched_since SINCE PKG: the watchdog logged a relaunch of PKG after SINCE, and PKG is back:
+# in front, its process up, and the test app logged RESUMED after SINCE
 relaunched_since() {
-    is_foreground "$2" && log_has "$1" WatchdogService "Relaunching $(re_escape "$2") \\("
+    in_front_and_running "$2" &&
+        log_has "$1" WatchdogService "Relaunching $(re_escape "$2") \\(" &&
+        log_has "$1" "$TARGET_TAG" "$(target_event_re RESUMED "$2")"
 }
 
 # expect_relaunch SINCE PKG TIMEOUT_S [LABEL [FOREGROUND]]: waits for the watchdog to bring PKG

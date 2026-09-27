@@ -718,10 +718,10 @@ require_target_foreground() {
     local fg
     if ! is_awake; then wake_device; fi
     fg=$(foreground_pkg)
-    if [[ $fg == "$TARGET_PKG" ]]; then return 0; fi
+    if [[ $fg == "$TARGET_PKG" ]] && wait_until 10 has_pid "$TARGET_PKG"; then return 0; fi
     step "the target is not in front (foreground: ${fg:-none}), waiting for the watchdog"
     if [[ $fg == "$LOADER_PKG" ]]; then press_key KEYCODE_HOME; fi
-    if wait_until 60 is_foreground "$TARGET_PKG"; then return 0; fi
+    if wait_until 60 in_front_and_running "$TARGET_PKG"; then return 0; fi
     fg=$(foreground_pkg)
     fail "precondition: the target app is not in the foreground (foreground: ${fg:-none})"
 }
@@ -732,6 +732,7 @@ require_target_foreground() {
 # own launch is relaunched on the launch's clock: early, and not because of the exit.
 settle_target_front() {
     local pid
+    wait_until 10 has_pid "$TARGET_PKG" || true
     pid=$(pid_of "$TARGET_PKG")
     step "letting a watchdog tick see the target in front (${TICK_SETTLE_S} s)"
     sleep "$TICK_SETTLE_S"
