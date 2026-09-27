@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:layout_marginStart="16dp"
@@ -16,6 +17,7 @@
         android:layout_width="48dp"
         android:layout_height="48dp"
         android:clickable="false"
+        android:contentDescription="@null"
         android:scaleType="centerCrop"
         android:src="@mipmap/ic_launcher" />
 
@@ -28,7 +30,7 @@
         android:ellipsize="end"
         android:fontFamily="sans-serif-medium"
         android:lines="1"
-        android:text="Chrome"
+        tools:text="Chrome"
         android:textSize="12sp" />
 
 </LinearLayout>

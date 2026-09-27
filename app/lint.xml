@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<lint>
+    <!-- targetSdk 34 is deliberate: Meta Horizon OS is built on Android 14 (API 34). -->
+    <issue id="OldTargetApi" severity="ignore" />
+    <!-- Versions are pinned and bumped as their own change; this check depends on what Google Maven has published that day. -->
+    <issue id="GradleDependency" severity="ignore" />
+</lint>
