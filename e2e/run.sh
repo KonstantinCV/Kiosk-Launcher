@@ -18,6 +18,7 @@ SCENARIOS=(
     "provision|scripts/provision-quest.sh installs the loader, grants it (saved to disk), sets the target and starts the watchdog"
     "loader-ui-stands-down|nothing is launched while the loader UI is in front"
     "launches-target|leaving the loader UI (HOME) gets the target launched"
+    "target-stays-put|a target that stays in front is left alone: nothing is relaunched for 25 s"
     "relaunch-after-exit|the target comes back after a normal exit"
     "relaunch-after-crash|the target comes back, in a new process, after a crash"
     "relaunch-after-force-stop|the target comes back after am force-stop"
@@ -31,6 +32,7 @@ SCENARIOS=(
     "vr-target|a VR-only app (no LAUNCHER category) can be the target"
     "blind-mode|without usage access the target still comes back (30 s blind relaunch)"
     "package-replaced|updating the loader restarts the watchdog without opening the UI"
+    "loader-crash|after the loader crashes, Android restarts the watchdog, which leaves the target alone until it exits"
     "reboot|after an unclean reboot the target starts with no interaction, and the provisioned state survived"
     "crash-loop-backoff|a crash loop gets throttled, and the target comes back after the cooldown"
 )
@@ -43,6 +45,8 @@ SCREEN_OFF_GRACE=6                   # see scenario_screen_off
 LONG_GRACE=12                        # see scenario_grace_period
 LONG_GRACE_MAX=18                    # its relaunch: 12 s from the first tick after the exit, + slack
 TICK_SETTLE_S=3                      # > one watchdog tick (2 s), see settle_target_front
+STAY_PUT_S=25                        # see scenario_target_stays_put: over 8 grace periods
+LOADER_RESTART_TIMEOUT=40            # see scenario_loader_crash
 BLIND_TIMEOUT=55                     # grace + 30 s blind interval + margin
 REBOOT_TIMEOUT=120                   # target resumed after boot completed
 MAX_LAUNCHES=5      # LaunchBackoff: 5 launches in 3 minutes, then one per minute
@@ -83,6 +87,8 @@ RUN_DONE=no # main got to the end; otherwise on_exit accounts for the scenarios 
 PENDING_NOTE="not run: the run had not finished when this report was written (still running, or killed)"
 CRASHED_PID="" # crash_target
 CRASH_TS=""
+LOADER_KILLED_BY="" # crash_loader
+LOADER_KILL_TS=""
 CRASH_RESULTS_LOST=0
 WHITELIST_SET_AT=-100 # $SECONDS when the loader was last put in the deviceidle whitelist
 WHITELIST_SAVE_S=6    # Android saves the whitelist 5 s after a change, and nothing forces it
@@ -877,6 +883,44 @@ crash_target() {
     CRASHED_PID=$pid
 }
 
+# crash_loader PID SINCE: crashes the loader's process PID with `am crash` (an uncaught exception
+# on its main thread, as a bug in the loader would throw), right after the log mark SINCE. If the
+# device refuses that, or it doesn't kill the process within 10 s, kills it with
+# `run-as <loader> kill -9` instead (the debug build is debuggable). Waits for PID to be gone; sets
+# LOADER_KILLED_BY to what did it, and LOADER_KILL_TS to a device time just before that.
+crash_loader() {
+    local pid=$1 out rc=0 refused=no why
+    LOADER_KILLED_BY=""
+    LOADER_KILL_TS=$2
+    step "am crash $LOADER_PKG (pid $pid)"
+    out=$(adb_shell am crash "$LOADER_PKG" 2>&1) || rc=$?
+    detail "      am crash: $(one_line "${out:-<no output>}") (exit $rc)"
+    if ((rc != 0)) || [[ $out == *"Unknown command"* || $out == *Exception* ]]; then refused=yes; fi
+    if [[ $refused == no ]]; then wait_until 10 pid_not "$LOADER_PKG" "$pid" || true; fi
+    if pid_not "$LOADER_PKG" "$pid"; then
+        LOADER_KILLED_BY="am crash"
+        return 0
+    fi
+    if [[ $refused == yes ]]; then
+        why="am crash was refused: $(one_line "${out:-exit $rc}")"
+    else
+        why="am crash left it running for 10 s"
+    fi
+    step "$why; run-as $LOADER_PKG kill -9 $pid"
+    LOADER_KILL_TS=$(log_mark "run-as kill -9 $pid") || {
+        fail "$NO_CLOCK"
+        return 1
+    }
+    rc=0
+    out=$(adb_shell run-as "$LOADER_PKG" kill -9 "$pid" 2>&1) || rc=$?
+    detail "      run-as kill -9: $(one_line "${out:-<no output>}") (exit $rc)"
+    if wait_until 10 pid_not "$LOADER_PKG" "$pid"; then
+        LOADER_KILLED_BY="run-as kill -9 ($why)"
+        return 0
+    fi
+    fail "the loader (pid $pid) is still alive: $why, and run-as kill -9 did not kill it either: $(one_line "${out:-exit $rc}")"
+}
+
 # ---------------------------------------------------------------------------------------------
 # Scenarios
 # ---------------------------------------------------------------------------------------------
@@ -989,6 +1033,35 @@ scenario_launches_target() {
     fi
     if ! log_has "$since" "$TARGET_TAG" "$(target_event_re CREATED "$TARGET_PKG")"; then
         fail "the test app did not log CREATED"
+        return 1
+    fi
+}
+
+# A target in front must be left alone. Launching it again would not show as a new process or as
+# a usage event: Android just hands the launch intent to the activity already on top (pausing and
+# resuming a singleTask app such as the test app or a Unity app for it). So a watchdog that lost
+# track of a target in front would relaunch it every grace period, for as long as it stays there.
+scenario_target_stays_put() {
+    local since pid fg now_pid relaunches
+    ensure_launch_budget 0 || return 1
+    require_target_foreground || return 1
+    settle_target_front || return 1
+    pid=$(pid_of "$TARGET_PKG")
+    since=$(log_mark "target in front, pid $pid") || {
+        fail "$NO_CLOCK"
+        return 1
+    }
+    step "waiting ${STAY_PUT_S} s with the target in front (grace period ${FAST_GRACE} s)"
+    sleep "$STAY_PUT_S"
+    relaunches=$(log_grep "$since" WatchdogService "Relaunching") || relaunches=""
+    if [[ -n $relaunches ]]; then
+        fail "the watchdog relaunched the target $(printf '%s\n' "$relaunches" | awk 'END { print NR }') time(s) in ${STAY_PUT_S} s although it stayed in front (the first logged foreground: $(printf '%s\n' "$relaunches" | parse_relaunch_foreground))"
+        return 1
+    fi
+    fg=$(foreground_pkg)
+    now_pid=$(pid_of "$TARGET_PKG")
+    if [[ $fg != "$TARGET_PKG" || $now_pid != "$pid" ]]; then
+        fail "the target did not stay in front for ${STAY_PUT_S} s (foreground: ${fg:-none}, pid $pid -> ${now_pid:-none})"
         return 1
     fi
 }
@@ -1386,6 +1459,74 @@ scenario_package_replaced() {
     fi
     note "loader pid ${old_pid:-none} -> $(pid_of "$LOADER_PKG")"
     since=$(log_mark "EXIT after the update") || {
+        fail "$NO_CLOCK"
+        return 1
+    }
+    exit_ts=$(exit_target "$since") || {
+        fail "$NO_EXIT"
+        return 1
+    }
+    expect_relaunch "$exit_ts" "$TARGET_PKG" "$BACK_TIMEOUT" || return 1
+}
+
+# The loader crashes while the target is in front, and nobody opens its UI: only Android can bring
+# the watchdog back. WatchdogService is a sticky foreground service, so Android restarts it in a new
+# process, normally about 1 s after the crash (recent versions, 14 among them, wait 10 to 30 s
+# longer under memory pressure, hence LOADER_RESTART_TIMEOUT). The new instance starts from
+# nothing: a new foreground tracker, grace period and launch backoff. It must see that the target
+# is already in front and leave it alone, and still relaunch it after an exit. The loader is
+# crashed only once per run: after a second crash within a minute or two, Android waits 30 minutes
+# before restarting the service.
+scenario_loader_crash() {
+    local since old_pid new_pid target_pid start_ts fg now_pid relaunches exit_ts
+    # The relaunch below is the new service instance's; this is for bringing the target back first
+    ensure_launch_budget 0 || return 1
+    require_target_foreground || return 1
+    settle_target_front || return 1
+    target_pid=$(pid_of "$TARGET_PKG")
+    old_pid=$(pid_of "$LOADER_PKG")
+    if [[ -z $old_pid ]] || ! watchdog_running; then
+        fail "precondition: WatchdogService is not running (loader pid: ${old_pid:-none})"
+        return 1
+    fi
+    since=$(log_mark "crashing the loader, pid $old_pid") || {
+        fail "$NO_CLOCK"
+        return 1
+    }
+    crash_loader "$old_pid" "$since" || return 1
+    note "loader killed by $LOADER_KILLED_BY"
+    step "waiting for Android to restart WatchdogService by itself"
+    expect_within "$LOADER_RESTART_TIMEOUT" "WatchdogService did not come back after the loader process died: Android did not restart the sticky service" \
+        watchdog_restarted "$old_pid" || return 1
+    new_pid=$(pid_of "$LOADER_PKG")
+    start_ts=$(wait_for_log_ts 10 "$since" WatchdogService "Watchdog started") || {
+        fail "WatchdogService runs again (pid ${new_pid:-none}) but logged no 'Watchdog started'"
+        return 1
+    }
+    if ! log_grep "$since" WatchdogService "Watchdog started" | awk -v p="$new_pid" '$2 == p { f = 1 } END { exit !f }'; then
+        fail "'Watchdog started' was not logged by the new loader process $new_pid: $(one_line "$(log_grep "$since" WatchdogService "Watchdog started")")"
+        return 1
+    fi
+    note "loader pid $old_pid -> $new_pid, watchdog back $(ts_diff "$start_ts" "$LOADER_KILL_TS") s after the crash"
+    fg=$(foreground_pkg)
+    if [[ $fg == "$LOADER_PKG" ]]; then
+        fail "the loader UI opened after the crash"
+        return 1
+    fi
+    step "checking that the new watchdog leaves the target alone for ${STAND_DOWN_S} s (grace period ${FAST_GRACE} s)"
+    sleep "$STAND_DOWN_S"
+    relaunches=$(log_grep "$since" WatchdogService "Relaunching") || relaunches=""
+    if [[ -n $relaunches ]]; then
+        fail "the restarted watchdog relaunched the target although it stayed in front (it logged foreground: $(printf '%s\n' "$relaunches" | parse_relaunch_foreground))"
+        return 1
+    fi
+    fg=$(foreground_pkg)
+    now_pid=$(pid_of "$TARGET_PKG")
+    if [[ $fg != "$TARGET_PKG" || $now_pid != "$target_pid" ]]; then
+        fail "the target did not stay in front through the loader crash (foreground: ${fg:-none}, pid $target_pid -> ${now_pid:-none})"
+        return 1
+    fi
+    since=$(log_mark "EXIT after the loader crash") || {
         fail "$NO_CLOCK"
         return 1
     }

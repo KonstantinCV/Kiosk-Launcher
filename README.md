@@ -86,7 +86,7 @@ To build it locally, set `LOADER_KEYSTORE` to the keystore's path and the other 
 
 - **Unit tests:** `./gradlew testDebugUnitTest` runs the watchdog's logic (`WatchdogPolicy`, `LaunchBackoff`, `ForegroundState`) on the JVM, and, with Robolectric, the adb command receiver, `TargetLauncher` (including the VR-category fallback) and `LoaderConfig`. The first run downloads Robolectric's Android SDK jar (~150 MB).
 - **Lint:** `./gradlew lintDebug` has no findings; `app/lint.xml` lists the checks that are off and why.
-- **End-to-end tests:** `e2e/` installs the real loader APK on an Android emulator and drives it only over adb, the way it is used on a Quest: it runs `scripts/provision-quest.sh`, sends the adb commands above, makes a test app exit and crash, presses home, turns the screen off, updates the loader and reboots. 18 scenarios, each checking that the target comes back (or, when it shouldn't, that it doesn't). Relaunches must come from the watchdog seeing the target leave, not from its blind 30 s fallback, and the provisioned grants must be saved to disk and survive an `adb reboot`.
+- **End-to-end tests:** `e2e/` installs the real loader APK on an Android emulator and drives it only over adb, the way it is used on a Quest: it runs `scripts/provision-quest.sh`, sends the adb commands above, makes a test app exit and crash, presses home, turns the screen off, updates the loader and reboots. 20 scenarios, each checking that the target comes back (or, when it shouldn't, that it doesn't). Relaunches must come from the watchdog seeing the target leave, not from its blind 30 s fallback, and the provisioned grants must be saved to disk and survive an `adb reboot`.
 
 Run them locally on Linux with KVM:
 
