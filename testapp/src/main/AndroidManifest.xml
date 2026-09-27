@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Test-only target app for the e2e suite (e2e/). Never shipped. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- PROBE_ADMIN addresses the loader's admin receiver directly. Making the loader visible
+         means only its permission check can stop the broadcast. -->
+    <queries>
+        <package android:name="com.osamaalek.kiosklauncher" />
+    </queries>
+
+    <application
+        android:icon="@android:drawable/sym_def_app_icon"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
+
+        <!-- The launch intent filter comes from the flavor: src/launcher or src/vr -->
+        <activity
+            android:name=".TargetActivity"
+            android:exported="true"
+            android:launchMode="singleTask" />
+
+        <!-- Driven by explicit broadcasts from the adb shell. Unprotected on purpose: any app
+             can make this test app exit or crash, which is harmless for a test-only app. -->
+        <receiver
+            android:name=".CommandReceiver"
+            android:exported="true"
+            tools:ignore="ExportedReceiver" />
+
+    </application>
+
+</manifest>
