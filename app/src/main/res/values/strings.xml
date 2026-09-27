@@ -1,5 +1,31 @@
 <resources>
     <string name="app_name">Kiosk Launcher</string>
-    <!-- TODO: Remove or change this placeholder text -->
-    <string name="hello_blank_fragment">Hello blank fragment</string>
+    <string name="picker_title">Choose the app to keep running</string>
+
+    <string name="section_target">App to keep running</string>
+    <string name="section_watchdog">Watchdog</string>
+    <string name="section_setup">One-time setup</string>
+
+    <string name="no_target">No app selected</string>
+    <string name="target_missing">Not installed</string>
+    <string name="choose_app">Choose app</string>
+    <string name="launch_now">Launch now</string>
+
+    <string name="watchdog_enabled">Launch on boot and relaunch after exit or crash</string>
+    <string name="grace_label">Relaunch after %d s out of focus</string>
+    <string name="pause_button">Pause for 30 minutes</string>
+    <string name="resume_button">Resume now</string>
+    <string name="paused_until">Paused until %s</string>
+    <string name="not_paused">Running</string>
+
+    <string name="usage_access_ok">✓ Usage access: exits and crashes are detected</string>
+    <string name="usage_access_missing">✗ Usage access missing: the app is brought back to the front every 30 s instead</string>
+    <string name="background_launch_overlay">✓ Can start apps from the background (display over other apps)</string>
+    <string name="background_launch_owner">✓ Can start apps from the background (device owner)</string>
+    <string name="background_launch_missing">✗ Can\'t start apps from the background: launches after boot and relaunches will be blocked</string>
+    <string name="setup_hint">Grant the missing permissions once over adb (developer mode, USB or wireless adb):</string>
+
+    <string name="notification_channel">Watchdog</string>
+    <string name="notification_watching">Keeping %s running</string>
+    <string name="notification_no_target">No app selected</string>
 </resources>

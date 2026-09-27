@@ -1,7 +1,5 @@
 package com.osamaalek.kiosklauncher.adapter
 
-import android.content.Context
-import android.content.Intent
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -12,24 +10,21 @@ import com.osamaalek.kiosklauncher.R
 import com.osamaalek.kiosklauncher.model.AppInfo
 
 
-class AppsAdapter(private val list: List<AppInfo>, private val context: Context) :
-    RecyclerView.Adapter<AppsAdapter.ContentHolder>() {
+class AppsAdapter(
+    private val list: List<AppInfo>,
+    private val onAppClick: (AppInfo) -> Unit,
+) : RecyclerView.Adapter<AppsAdapter.ContentHolder>() {
 
-
-    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): AppsAdapter.ContentHolder {
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ContentHolder {
         val view = LayoutInflater.from(parent.context).inflate(R.layout.holder_app, parent, false)
         return ContentHolder(view)
     }
 
     override fun onBindViewHolder(holder: ContentHolder, position: Int) {
-        holder.textView.text = list[position].label
-        holder.imageView.setImageDrawable(list[position].icon)
-
-        holder.itemView.setOnClickListener {
-            val launchIntent: Intent? =
-                context.packageManager.getLaunchIntentForPackage(list[position].packageName.toString())
-            context.startActivity(launchIntent)
-        }
+        val app = list[position]
+        holder.textView.text = app.label
+        holder.imageView.setImageDrawable(app.icon)
+        holder.itemView.setOnClickListener { onAppClick(app) }
     }
 
     override fun getItemCount(): Int {

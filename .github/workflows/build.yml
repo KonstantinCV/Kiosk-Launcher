@@ -1,7 +1,14 @@
 name: Build Android App
 
 on:
+  push:
+  pull_request:
   workflow_dispatch:
+    inputs:
+      target_package:
+        description: 'Package the loader starts before one is picked on the headset (optional)'
+        required: false
+        default: ''
 
 jobs:
   build:
@@ -21,8 +28,10 @@ jobs:
     - name: Grant execute permission to gradlew
       run: chmod +x gradlew
 
-    - name: Build with Gradle
-      run: ./gradlew assembleDebug
+    - name: Unit tests and debug build
+      env:
+        TARGET_PACKAGE: ${{ github.event.inputs.target_package }}
+      run: ./gradlew testDebugUnitTest assembleDebug -PloaderTargetPackage="$TARGET_PACKAGE"
 
     - name: Upload APK
       uses: actions/upload-artifact@v4
