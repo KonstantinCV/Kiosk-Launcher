@@ -20,7 +20,9 @@ ADB=(adb)
 echo "Installing loader..."
 "${ADB[@]}" install -r -g "$APK"
 
-if ! "${ADB[@]}" shell pm list packages "$TARGET" | grep -qx "package:$TARGET"; then
+# pm lists every package containing $TARGET. Not grep -q: stopping at the first match can kill
+# adb with SIGPIPE, which pipefail would report as "not installed".
+if ! "${ADB[@]}" shell pm list packages "$TARGET" | grep -Fx "package:$TARGET" >/dev/null; then
     echo "Target app $TARGET is not installed on the headset. Install it first." >&2
     exit 1
 fi
