@@ -146,7 +146,14 @@ adb logcat -s WatchdogService TargetLauncher AdminCommandReceiver E2ETarget E2ER
 Skip the reboot unless you want it:
 
 ```sh
-e2e/run.sh --allow-real-device --skip reboot --loader-apk app-debug.apk
+e2e/run.sh --allow-real-device --skip reboot
+```
+
+That uses the APKs from a local build (`./gradlew assembleDebug :testapp:assembleDebug`). To test a CI build instead, download the run's `app-debug` and `e2e-target-apks` artifacts and pass them:
+
+```sh
+e2e/run.sh --allow-real-device --skip reboot --loader-apk app-debug.apk \
+    --target-apk testapp-launcher-debug.apk --vr-target-apk testapp-vr-debug.apk
 ```
 
 A Quest turns its display off when it isn't worn, which stops the watchdog, so wear it or cover the proximity sensor while the suite runs. The Horizon home and the Meta button also behave differently from an emulator's home screen, so treat a failure on a headset as something to look into, not proof of a loader bug.
@@ -168,6 +175,27 @@ adb shell settings delete secure show_first_crash_dialog_dev_option
 adb shell settings delete secure anr_show_background
 scripts/provision-quest.sh app-debug.apk <target package>
 ```
+
+### Manual checks on a Quest
+
+Some things only a headset can answer: whether Horizon OS lets the grants do their job, and how its own UI shows up to the watchdog. After the automated run above, uninstall and provision the headset for its real target (the commands above), then keep a log running in a second terminal:
+
+```sh
+adb logcat -c
+adb logcat -v time WatchdogService:I TargetLauncher:I AdminCommandReceiver:I ActivityTaskManager:I '*:S' | tee quest-checks.log
+```
+
+| # | Do | Expect |
+|---|---|---|
+| 1 | Restart the headset from its power menu. | The target starts on its own shortly after the home environment appears: `Watchdog started`, then `Relaunching <target>`. |
+| 2 | Restart it with `adb reboot` (like a power cut). | The same. `adb shell appops get com.osamaalek.kiosklauncher` still shows `SYSTEM_ALERT_WINDOW: allow` and `GET_USAGE_STATS: allow`. |
+| 3 | Quit the target from its own menu. | It comes back after the grace period (10 s). The log line reads `(foreground: <some package>)`, not `(foreground: unknown)`. |
+| 4 | `adb shell am crash <target package>` (or `am force-stop`). | It comes back after the grace period. |
+| 5 | Open the Meta (universal) menu over the target and leave it open for 15 s. | Note what happens: the menu may count as leaving the target, and the target is brought back over it after 10 s. Say whether that is acceptable. Right after opening the menu, `adb shell dumpsys usagestats \| grep -E 'ACTIVITY_(RESUMED\|PAUSED)' \| tail -5` shows how Horizon reports it. |
+| 6 | Take the headset off for 30 s, then put it back on. | Nothing is launched while the display is off; the target is still there, or comes back within the grace period. |
+| 7 | Open the loader from the app library and wait 15 s. | Nothing is launched over the loader's own screen. |
+
+Send back `quest-checks.log`, the `e2e/results/` folder from the automated run, the headset's Horizon OS version (`adb shell getprop ro.build.display.id`) and a note per check.
 
 ## CI
 
