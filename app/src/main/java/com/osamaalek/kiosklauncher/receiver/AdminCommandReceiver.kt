@@ -14,40 +14,20 @@ import com.osamaalek.kiosklauncher.util.TargetLauncher
  *   adb shell am broadcast -n com.osamaalek.kiosklauncher/.receiver.AdminCommandReceiver \
  *       -a com.osamaalek.kiosklauncher.action.SET_TARGET --es package com.example.headjackapp
  *
+ * `am broadcast` prints the outcome: result=-1, data="OK" when the command was applied, or
+ * result=1 and the reason when it was rejected, in which case nothing was changed.
  * The running watchdog picks up changes on its next check.
  */
 class AdminCommandReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         val config = LoaderConfig(context)
-        when (intent.action) {
-            ACTION_SET_TARGET -> {
-                val pkg = intent.getStringExtra(EXTRA_PACKAGE).orEmpty()
-                if (!TargetLauncher.isInstalled(context, pkg)) {
-                    fail("No launchable app with package '$pkg'")
-                    return
-                }
-                config.targetPackage = pkg
-            }
-            ACTION_ENABLE -> config.enabled = true
-            ACTION_DISABLE -> config.enabled = false
-            ACTION_PAUSE -> {
-                val minutes = intent.getIntExtra(EXTRA_MINUTES, DEFAULT_PAUSE_MINUTES)
-                config.pausedUntil = System.currentTimeMillis() + minutes * 60_000L
-            }
-            ACTION_RESUME -> config.pausedUntil = 0L
-            ACTION_SET_GRACE -> {
-                val seconds = intent.getIntExtra(EXTRA_SECONDS, -1)
-                if (seconds < 0) {
-                    fail("Missing --ei $EXTRA_SECONDS")
-                    return
-                }
-                config.graceSeconds = seconds
-            }
-            else -> {
-                fail("Unknown action ${intent.action}")
-                return
-            }
+        val error = apply(context, config, intent)
+        if (error != null) {
+            Log.w(TAG, error)
+            resultCode = RESULT_ERROR
+            resultData = error
+            return
         }
         Log.i(TAG, "${intent.action} applied: target=${config.targetPackage} enabled=${config.enabled} " +
             "grace=${config.graceSeconds}s pausedUntil=${config.pausedUntil}")
@@ -55,11 +35,47 @@ class AdminCommandReceiver : BroadcastReceiver() {
         resultData = "OK"
     }
 
-    private fun fail(message: String) {
-        Log.w(TAG, message)
-        resultCode = RESULT_ERROR
-        resultData = message
+    /** Applies the command, or returns why it was rejected without changing anything. */
+    private fun apply(context: Context, config: LoaderConfig, intent: Intent): String? {
+        when (intent.action) {
+            ACTION_SET_TARGET -> {
+                // Checked as it will be stored: LoaderConfig trims it
+                val pkg = intent.getStringExtra(EXTRA_PACKAGE).orEmpty().trim()
+                if (pkg == context.packageName) return "The loader can't be its own target ('$pkg')"
+                if (!TargetLauncher.isInstalled(context, pkg)) return "No launchable app with package '$pkg'"
+                config.targetPackage = pkg
+            }
+            ACTION_ENABLE -> config.enabled = true
+            ACTION_DISABLE -> config.enabled = false
+            ACTION_PAUSE -> {
+                val minutes = if (intent.hasExtra(EXTRA_MINUTES)) {
+                    intent.intExtra(EXTRA_MINUTES) ?: return "Pass the minutes with --ei, e.g. --ei $EXTRA_MINUTES 30"
+                } else {
+                    DEFAULT_PAUSE_MINUTES
+                }
+                if (minutes < 1) return "The pause must be at least 1 minute, got $minutes"
+                config.pausedUntil = System.currentTimeMillis() + minutes * 60_000L
+            }
+            ACTION_RESUME -> config.pausedUntil = 0L
+            ACTION_SET_GRACE -> {
+                val seconds = intent.intExtra(EXTRA_SECONDS) ?: return "Missing --ei $EXTRA_SECONDS"
+                if (seconds !in LoaderConfig.MIN_GRACE_SECONDS..LoaderConfig.MAX_GRACE_SECONDS) {
+                    return "The grace period must be ${LoaderConfig.MIN_GRACE_SECONDS} to " +
+                        "${LoaderConfig.MAX_GRACE_SECONDS} seconds, got $seconds"
+                }
+                config.graceSeconds = seconds
+            }
+            else -> return "Unknown action ${intent.action}"
+        }
+        return null
     }
+
+    /**
+     * The extra [name] if it was sent as an int (--ei), else null: missing, or sent with another
+     * type such as --es, for which getIntExtra would quietly return its default.
+     */
+    @Suppress("DEPRECATION") // Bundle.get: the typed getters can't tell a mistyped extra from a missing one
+    private fun Intent.intExtra(name: String): Int? = extras?.get(name) as? Int
 
     companion object {
         private const val TAG = "AdminCommandReceiver"
