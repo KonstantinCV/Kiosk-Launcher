@@ -7,6 +7,12 @@ plugins {
 // Pass it at build time: ./gradlew assembleRelease -PloaderTargetPackage=com.example.headjackapp
 def loaderTargetPackage = project.findProperty('loaderTargetPackage') ?: ''
 
+// Release signing, so a newer build installs over an older one on a headset without losing the
+// loader's settings. The keystore is never committed: pass it in environment variables (CI takes
+// them from GitHub secrets) or Gradle properties. Without them the release APK is unsigned.
+def signingValue = { String name -> System.getenv(name) ?: project.findProperty(name) }
+def releaseKeystore = signingValue('LOADER_KEYSTORE')
+
 android {
     namespace 'com.osamaalek.kiosklauncher'
     compileSdk 35
@@ -26,8 +32,22 @@ android {
         buildConfig true
     }
 
+    signingConfigs {
+        if (releaseKeystore) {
+            release {
+                storeFile file(releaseKeystore)
+                storePassword signingValue('LOADER_KEYSTORE_PASSWORD')
+                keyAlias signingValue('LOADER_KEY_ALIAS')
+                keyPassword signingValue('LOADER_KEY_PASSWORD')
+            }
+        }
+    }
+
     buildTypes {
         release {
+            if (releaseKeystore) {
+                signingConfig signingConfigs.release
+            }
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }

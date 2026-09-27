@@ -16,3 +16,7 @@ local.properties
 
 # e2e test results (e2e/run.sh, e2e/start-emulator.sh)
 /e2e/results/
+
+# Signing keys (release signing reads them from the environment, see README)
+*.jks
+*.keystore

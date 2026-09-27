@@ -49,6 +49,35 @@ jobs:
         name: app-debug
         path: app/build/outputs/apk/debug/app-debug.apk
 
+    # Signed release APK for headsets, only when the signing secrets are set (see README). Without
+    # them, e.g. on pull requests from forks, the step does nothing and the build is as before.
+    - name: Signed release build
+      id: release
+      env:
+        LOADER_KEYSTORE_BASE64: ${{ secrets.LOADER_KEYSTORE_BASE64 }}
+        LOADER_KEYSTORE_PASSWORD: ${{ secrets.LOADER_KEYSTORE_PASSWORD }}
+        LOADER_KEY_ALIAS: ${{ secrets.LOADER_KEY_ALIAS }}
+        LOADER_KEY_PASSWORD: ${{ secrets.LOADER_KEY_PASSWORD }}
+        TARGET_PACKAGE: ${{ github.event.inputs.target_package }}
+      run: |
+        if [ -z "$LOADER_KEYSTORE_BASE64" ]; then
+          echo "No signing secrets, skipping the signed release build."
+          exit 0
+        fi
+        export LOADER_KEYSTORE="$RUNNER_TEMP/loader-release.jks"
+        trap 'rm -f "$LOADER_KEYSTORE"' EXIT
+        printf '%s' "$LOADER_KEYSTORE_BASE64" | base64 -d > "$LOADER_KEYSTORE"
+        ./gradlew assembleRelease -PloaderTargetPackage="$TARGET_PACKAGE"
+        echo "signed=true" >> "$GITHUB_OUTPUT"
+
+    - name: Upload signed release APK
+      if: steps.release.outputs.signed == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: app-release
+        path: app/build/outputs/apk/release/app-release.apk
+        if-no-files-found: error
+
     # Test-only apps for the e2e job, flattened so the artifact holds just the two APKs
     - name: Collect E2E target APKs
       run: |

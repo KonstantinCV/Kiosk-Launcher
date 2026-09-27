@@ -18,7 +18,7 @@ The loader UI shows the target app, lets you **choose another app**, launch it n
 
 The headset needs developer mode and adb access, once, for the grants below. After that it runs on its own.
 
-1. Build the APK (`./gradlew assembleDebug`, or download `app-debug` from the GitHub Actions run).
+1. Get the APK: `app-release` from the GitHub Actions run once [release signing](#release-signing) is set up, otherwise `app-debug` (or build it with `./gradlew assembleDebug`).
 2. Install the target app (for example your Headjack app) on the headset.
 3. Run:
 
@@ -68,6 +68,19 @@ Android Gradle Plugin 8.7, Kotlin 2.0, JDK 17, compile SDK 35, target SDK 34 (Me
 ```
 
 This is what CI runs. The loader APK is `app/build/outputs/apk/debug/app-debug.apk`. The `testapp` module is a small target app used only by the end-to-end tests below; it is never shipped.
+
+### Release signing
+
+Every CI run signs `app-debug` with a new throwaway debug key, so a headset can't take a newer CI build over an older one (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`), and uninstalling first wipes the loader's settings. For headsets, use a release build signed with your own key instead. Create the key once and keep a backup of it: without it, no later build can update the headsets.
+
+```sh
+keytool -genkeypair -keystore loader-release.jks -alias loader -keyalg RSA -keysize 4096 -validity 10000
+base64 -w0 loader-release.jks    # macOS: base64 -i loader-release.jks
+```
+
+In the GitHub repository, under *Settings > Secrets and variables > Actions*, add `LOADER_KEYSTORE_BASE64` (the base64 output), `LOADER_KEYSTORE_PASSWORD`, `LOADER_KEY_ALIAS` (`loader`) and `LOADER_KEY_PASSWORD` (the same as the keystore password, since keytool makes PKCS12 keystores by default). CI then also uploads a signed `app-release`. Without the secrets, for example on pull requests from forks, that step is skipped.
+
+To build it locally, set `LOADER_KEYSTORE` to the keystore's path and the other three variables, then run `./gradlew assembleRelease` (they can also go in `~/.gradle/gradle.properties`). Without them, `assembleRelease` gives an unsigned APK. A headset that has a debug build needs `adb uninstall com.osamaalek.kiosklauncher` once before the first release build, then provisioning again.
 
 ## Testing
 
