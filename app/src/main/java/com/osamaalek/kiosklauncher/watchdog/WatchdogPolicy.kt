@@ -5,13 +5,16 @@ package com.osamaalek.kiosklauncher.watchdog
  * dependencies so it can be unit tested on the JVM.
  *
  * The target is launched once none of its activities has been resumed for [Snapshot.graceMs].
- * The same rule covers first boot, a normal exit and a crash.
+ * The same rule covers first boot, a normal exit and a crash. [evaluate] only asks for a launch;
+ * the caller reports the ones it makes with [onLaunched], so a launch it can't make (target not
+ * installed) neither restarts the grace period nor counts against the crash-loop [backoff].
  */
-class WatchdogPolicy {
+class WatchdogPolicy(private val backoff: LaunchBackoff = LaunchBackoff()) {
 
-    enum class Decision { IDLE, WAIT, LAUNCH }
+    enum class Decision { IDLE, WAIT, LAUNCH, THROTTLED }
 
     data class Snapshot(
+        /** Monotonic (SystemClock.elapsedRealtime), so wall-clock changes don't move the timers. */
         val now: Long,
         val targetPackage: String,
         val enabled: Boolean,
@@ -59,15 +62,22 @@ class WatchdogPolicy {
         if (!s.foregroundKnown) {
             // Can't see the foreground app, so relaunching is the only way to recover from a crash.
             // A launch intent for an app that is already in front just brings its task forward.
+            // Those periodic launches aren't a crash loop, so the backoff doesn't count them.
             val last = lastLaunch
             if (last != null && s.now - last.at < s.blindIntervalMs) return Decision.WAIT
+        } else if (!backoff.canLaunch(s.now)) {
+            return Decision.THROTTLED
         }
+        return Decision.LAUNCH
+    }
 
+    /** The caller launched the target, as asked by [evaluate] for [s]. */
+    fun onLaunched(s: Snapshot) {
         // Give the launch its own grace period before trying again
         notTargetSince = s.now
+        if (s.foregroundKnown) backoff.onLaunched(s.now)
         val intoUnknown = s.foregroundKnown && s.foregroundPackage == null
         lastLaunch = Launch(s.now, s.targetPackage, intoUnknown, s.activityEvents)
-        return Decision.LAUNCH
     }
 
     /**

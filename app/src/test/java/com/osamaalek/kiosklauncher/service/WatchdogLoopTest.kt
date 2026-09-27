@@ -49,8 +49,8 @@ class WatchdogLoopTest {
             top = null
         }
 
-        /** Ticks every 2 s for [ms]. Returns when it launched. */
-        fun run(ms: Long): List<Long> {
+        /** Ticks every 2 s for [ms]; [onLaunch] runs after each launch. Returns when it launched. */
+        fun run(ms: Long, onLaunch: () -> Unit = {}): List<Long> {
             val launches = mutableListOf<Long>()
             val end = elapsed + ms
             while (elapsed < end) {
@@ -73,9 +73,11 @@ class WatchdogLoopTest {
                     blindIntervalMs = 30_000,
                 )
                 if (policy.evaluate(s) != Decision.LAUNCH) continue
+                policy.onLaunched(s)
                 launches += elapsed
                 // A launch of an app that is already in front changes nothing, so records nothing
                 if (top != target) resume(target)
+                onLaunch()
             }
             return launches
         }
@@ -114,6 +116,29 @@ class WatchdogLoopTest {
         loop.scheduled[loop.elapsed + 10_000] = { loop.record(ACTIVITY_RESUMED, home) }
         loop.scheduled[loop.elapsed + 40_000] = { loop.record(ACTIVITY_PAUSED, home) }
         assertEquals(emptyList<Long>(), loop.run(10 * MINUTE))
+    }
+
+    @Test
+    fun `a wall-clock jump changes nothing in grace and backoff timing`() {
+        /** The target crashes 4 s after every launch and home comes back; the clock may jump back an hour. */
+        fun crashLoop(jumpBackAt: Set<Long>): List<Long> {
+            val loop = Loop()
+            loop.resume(home)
+            val start = loop.elapsed
+            for (at in jumpBackAt) loop.scheduled[start + at] = { loop.wall -= HOUR }
+            return loop.run(3 * MINUTE + 30_000) {
+                loop.scheduled[loop.elapsed + 4_000] = {
+                    loop.crash()
+                    loop.resume(home)
+                }
+            }.map { it - start }
+        }
+
+        val steady = crashLoop(emptySet())
+        // A grace period after each crash is seen (a tick after it), five times; then one a minute
+        assertEquals(listOf(12_000L, 28_000L, 44_000L, 60_000L, 76_000L, 136_000L, 196_000L), steady)
+        // Once within a grace period and once within the cooldown, both while no event is due
+        assertEquals(steady, crashLoop(setOf(steady[1] + 8_000, steady[4] + 20_000)))
     }
 
     private companion object {

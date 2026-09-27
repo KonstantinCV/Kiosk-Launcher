@@ -13,6 +13,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
+import android.os.SystemClock
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
@@ -23,8 +24,8 @@ import com.osamaalek.kiosklauncher.ui.MainActivity
 import com.osamaalek.kiosklauncher.util.LoaderConfig
 import com.osamaalek.kiosklauncher.util.Permissions
 import com.osamaalek.kiosklauncher.util.TargetLauncher
-import com.osamaalek.kiosklauncher.watchdog.LaunchBackoff
 import com.osamaalek.kiosklauncher.watchdog.WatchdogPolicy
+import com.osamaalek.kiosklauncher.watchdog.WatchdogPolicy.Decision
 
 /**
  * Foreground service that keeps the target app running: it launches it after boot and
@@ -37,12 +38,25 @@ class WatchdogService : Service() {
     private lateinit var tracker: ForegroundTracker
     private lateinit var powerManager: PowerManager
     private val policy = WatchdogPolicy()
-    private val backoff = LaunchBackoff()
+    private var throttled = false
+    private var missingTarget: String? = null
+    private var lastErrorLogAt: Long? = null
 
     private val tick = object : Runnable {
         override fun run() {
-            evaluate()
-            handler.postDelayed(this, TICK_MS)
+            try {
+                evaluate()
+            } catch (e: RuntimeException) {
+                // Uncaught, this would crash the loader, and Android waits longer and longer before
+                // restarting a service that keeps crashing. Keep watching; log at most once a minute.
+                val now = SystemClock.elapsedRealtime()
+                if (lastErrorLogAt.let { it == null || now - it >= ERROR_LOG_INTERVAL_MS }) {
+                    lastErrorLogAt = now
+                    Log.e(TAG, "Watchdog check failed", e)
+                }
+            } finally {
+                handler.postDelayed(this, TICK_MS)
+            }
         }
     }
 
@@ -80,36 +94,39 @@ class WatchdogService : Service() {
     }
 
     private fun evaluate() {
-        val now = System.currentTimeMillis()
         val target = config.targetPackage
         val foregroundKnown = Permissions.hasUsageAccess(this)
         if (foregroundKnown) tracker.update()
-        val foreground = if (foregroundKnown) tracker.foregroundPackage else null
 
-        val decision = policy.evaluate(
-            WatchdogPolicy.Snapshot(
-                now = now,
-                targetPackage = target,
-                enabled = config.enabled,
-                paused = config.isPaused(now),
-                loaderUiVisible = LoaderActivity.isVisible,
-                interactive = powerManager.isInteractive,
-                foregroundKnown = foregroundKnown,
-                targetResumed = foregroundKnown && tracker.isResumed(target),
-                foregroundPackage = foreground,
-                activityEvents = tracker.activityEvents,
-                graceMs = config.graceSeconds * 1000L,
-                blindIntervalMs = BLIND_INTERVAL_MS,
-            )
+        val snapshot = WatchdogPolicy.Snapshot(
+            now = SystemClock.elapsedRealtime(),
+            targetPackage = target,
+            enabled = config.enabled,
+            paused = config.isPaused(),
+            loaderUiVisible = LoaderActivity.isVisible,
+            interactive = powerManager.isInteractive,
+            foregroundKnown = foregroundKnown,
+            targetResumed = foregroundKnown && tracker.isResumed(target),
+            foregroundPackage = if (foregroundKnown) tracker.foregroundPackage else null,
+            activityEvents = tracker.activityEvents,
+            graceMs = config.graceSeconds * 1000L,
+            blindIntervalMs = BLIND_INTERVAL_MS,
         )
-        if (decision != WatchdogPolicy.Decision.LAUNCH) return
+        val decision = policy.evaluate(snapshot)
+        if (decision == Decision.THROTTLED && !throttled) Log.w(TAG, "$target keeps exiting, relaunch throttled")
+        throttled = decision == Decision.THROTTLED
+        if (decision != Decision.LAUNCH) return
 
-        if (!backoff.tryAcquire(now)) {
-            Log.w(TAG, "$target keeps exiting, relaunch throttled")
+        if (TargetLauncher.launchIntent(this, target) == null) {
+            // Not launched, so it costs nothing, and the policy asks again on the next tick
+            if (missingTarget != target) Log.w(TAG, "$target is not installed or has no launchable activity")
+            missingTarget = target
             return
         }
-        Log.i(TAG, "Relaunching $target (foreground: ${foreground ?: "unknown"})")
+        missingTarget = null
+        Log.i(TAG, "Relaunching $target (foreground: ${snapshot.foregroundPackage ?: "unknown"})")
         TargetLauncher.launch(this, target)
+        policy.onLaunched(snapshot)
     }
 
     private fun createChannel() {
@@ -145,6 +162,7 @@ class WatchdogService : Service() {
         private const val NOTIFICATION_ID = 1
         private const val TICK_MS = 2_000L
         private const val BLIND_INTERVAL_MS = 30_000L
+        private const val ERROR_LOG_INTERVAL_MS = 60_000L
 
         /**
          * Starts (or refreshes) the service. Allowed from an activity, from BOOT_COMPLETED and,
