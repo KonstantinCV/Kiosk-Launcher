@@ -161,6 +161,19 @@ class ForegroundTrackerTest {
     }
 
     @Test
+    fun `an event recorded late is counted, once`() {
+        event(ACTIVITY_RESUMED, target)
+        update()
+        val count = tracker.activityEvents
+        // Stamped before the last query ended, but only visible after it: it is still news
+        event(ACTIVITY_STOPPED, target, at = wall - 500)
+        update()
+        assertEquals(count + 1, tracker.activityEvents)
+        update()
+        assertEquals(count + 1, tracker.activityEvents)
+    }
+
+    @Test
     fun `each activity event is counted once, although the overlap reads it again`() {
         event(ACTIVITY_RESUMED, home, "Home")
         update()

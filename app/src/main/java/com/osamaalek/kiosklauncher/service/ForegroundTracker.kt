@@ -18,7 +18,7 @@ class ForegroundTracker(
 ) {
 
     /** A usage event; [type] is one of the UsageEvents.Event types. */
-    class Event(val timestamp: Long, val type: Int, val packageName: String, val className: String)
+    data class Event(val timestamp: Long, val type: Int, val packageName: String, val className: String)
 
     fun interface EventSource {
         /** The events stamped in [start, end), oldest first. */
@@ -27,6 +27,8 @@ class ForegroundTracker(
 
     private val state = ForegroundState()
     private var queriedUntil = 0L
+    /** The activity events the last update read that the next one reads again (the overlap). */
+    private var overlap = emptySet<Event>()
 
     /** Counts activity events as they are read, each once despite the overlap. */
     var activityEvents = 0
@@ -48,16 +50,26 @@ class ForegroundTracker(
             state.clear()
             start = now - MAX_LOOKBACK_MS
         }
+        val readBefore = overlap
+        val readAgain = HashSet<Event>()
         // In chunks, so that no single answer (a parcel) gets large
         while (start < now) {
             val end = minOf(start + CHUNK_MS, now)
-            source.query(start, end).forEach(::apply)
+            for (event in source.query(start, end)) {
+                if (!apply(event)) continue
+                // Whether it was read before, by what the last update read, not by its timestamp:
+                // one recorded late is stamped before that update ran, yet it is new
+                if (event !in readBefore) activityEvents++
+                if (event.timestamp >= now - OVERLAP_MS) readAgain += event
+            }
             start = end
         }
+        overlap = readAgain
         queriedUntil = now
     }
 
-    private fun apply(event: Event) {
+    /** Folds [event] into the state; true if it is an activity event. */
+    private fun apply(event: Event): Boolean {
         when (event.type) {
             UsageEvents.Event.ACTIVITY_RESUMED -> state.onResumed(event.packageName, event.className)
             // An activity that dies while resumed (crash, force-stop) reports no pause, only
@@ -67,11 +79,11 @@ class ForegroundTracker(
             // Nothing resumed before a shutdown is still resumed after it, even if no pause was saved
             UsageEvents.Event.DEVICE_SHUTDOWN, UsageEvents.Event.DEVICE_STARTUP -> {
                 state.clear()
-                return
+                return false
             }
-            else -> return
+            else -> return false
         }
-        if (event.timestamp >= queriedUntil) activityEvents++
+        return true
     }
 
     companion object {
