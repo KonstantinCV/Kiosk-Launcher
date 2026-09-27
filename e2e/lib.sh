@@ -33,7 +33,12 @@ TIMEOUT_BIN=$(command -v timeout 2>/dev/null || command -v gtimeout 2>/dev/null 
 DEVICE_CLOCK_MS=no # probe_device_clock: whether `date +%s.%N` gives sub-second time on the device
 LOGCAT_SINCE=yes   # probe_logcat: whether `logcat -t <epoch>.<ms>` works on the device
 E2E_FAIL_REASON="" # first failure of the running scenario
+E2E_FAIL_PREFIX="" # put in front of the running scenario's failure reason, e.g. "crash 3: "
 E2E_NOTE=""        # notes of the running scenario, for the summary
+TARGET_CMD_OUT=""  # target_cmd: what `am broadcast` printed
+APPOPS_OUT=""      # appops_cmd: what `appops` printed
+RELAUNCH_TS=""     # expect_relaunch: device time of the relaunch it saw
+RELAUNCH_FG=""     # expect_relaunch: the foreground that relaunch logged ("unknown" if blind)
 
 # ---------------------------------------------------------------------------------------------
 # Output
@@ -42,7 +47,8 @@ E2E_NOTE=""        # notes of the running scenario, for the summary
 log() {
     local line
     line="[$(date '+%H:%M:%S')] $*"
-    printf '%s\n' "$line" >&2
+    # stderr can be gone (terminal closed, the reader of a pipe killed): run.log still gets it
+    printf '%s\n' "$line" >&2 2>/dev/null || true
     printf '%s\n' "$line" >>"$RUN_LOG" 2>/dev/null || true
 }
 
@@ -69,10 +75,12 @@ note() {
     step "note: $*"
 }
 
-# fail REASON: records the scenario's (first) failure reason; always returns 1
+# fail REASON: records the scenario's (first) failure reason, after E2E_FAIL_PREFIX; always
+# returns 1
 fail() {
-    if [[ -z $E2E_FAIL_REASON ]]; then E2E_FAIL_REASON=$*; fi
-    log "    FAIL: $*"
+    local reason="$E2E_FAIL_PREFIX$*"
+    if [[ -z $E2E_FAIL_REASON ]]; then E2E_FAIL_REASON=$reason; fi
+    log "    FAIL: $reason"
     return 1
 }
 
@@ -224,6 +232,143 @@ parse_wakefulness() {
             if (w != "") print w
             else if (d == "ON") print "Awake"
             else if (d != "") print "Asleep"
+        }
+    '
+}
+
+# parse_relaunch_foreground < WatchdogService lines: what the first
+# "Relaunching <pkg> (foreground: <fg>)" line says was in front. "unknown" means the watchdog
+# could not see the foreground app (no usage access: it relaunches blind). Nothing if no line.
+parse_relaunch_foreground() {
+    awk '
+        !found && / Relaunching [^ ]+ \(foreground: / {
+            s = $0
+            sub(/^.* Relaunching [^ ]+ \(foreground: /, "", s)
+            sub(/\)[ \t]*$/, "", s)
+            fg = s
+            found = 1
+        }
+        END { if (found) print fg }
+    '
+}
+
+# parse_probe_result < E2ETarget lines: "<code> <data>" from the first
+# "PROBE_ADMIN result=<code> data=<data>" line, the test app's log of how its ordered DISABLE
+# broadcast to the loader ended (data is "null" when there was none). Nothing if no line.
+parse_probe_result() {
+    awk '
+        !found && match($0, /PROBE_ADMIN result=-?[0-9]+ data=/) {
+            s = substr($0, RSTART + 19)
+            code = s
+            sub(/ .*$/, "", code)
+            data = s
+            sub(/^[^ ]* data=/, "", data)
+            sub(/[ \t]+$/, "", data)
+            found = 1
+        }
+        END { if (found) print code " " data }
+    '
+}
+
+# crash_loop_verdict PKG < WatchdogService and E2ETarget lines (epoch time first), from before
+# the watchdog was (re)started: checks the crash loop against LaunchBackoff exactly. From the
+# first "Watchdog started" on, it expects
+#   launch 1, then crash k followed by launch k+1 for k = 1..4 (one launch per crash, each
+#   logging a known foreground), then crash 5 answered by "relaunch throttled" and no launch for
+#   at least 45 s, then launch 6 at least 55 s after launch 5 (the 60 s cooldown) and at most
+#   80 s after crash 5.
+# Prints "ok <counts and timings>", "fail <reason>" for something that went wrong, or
+# "incomplete <what is missing>" for a log that stops early; returns 0 for ok, else 1. Stops at
+# launch 6.
+crash_loop_verdict() {
+    awk -v pkg="$1" -v max=5 -v min_gap=55 -v quiet=45 -v late=80 '
+        function fail(msg) {
+            if (verdict == "") verdict = "fail " msg
+            done = 1
+        }
+        function sec(x) { return sprintf("%.1f", x) }
+        function message(line, tag) {
+            if (!match(line, " " tag " *: ")) return ""
+            return substr(line, RSTART + RLENGTH)
+        }
+        BEGIN {
+            relaunch = "Relaunching " pkg " ("
+            throttled = pkg " keeps exiting, relaunch throttled"
+            crash = "CRASH pkg=" pkg " pid="
+        }
+        done { next }
+        {
+            t = $1 + 0
+            m = message($0, "WatchdogService")
+            if (m == "") {
+                m = message($0, "E2ETarget")
+                if (m == "" || index(m, crash) != 1) next
+                if (!started) next
+                n = crashes + 1
+                if (launches != n) {
+                    if (launches < n) fail("crash " n " came before launch " n " (" launches " launch(es) so far)")
+                    else fail("crash " n " came after " launches " launches: an extra launch")
+                    next
+                }
+                pid = substr(m, length(crash) + 1)
+                sub(/[^0-9].*$/, "", pid)
+                if (pid in seen) { fail("crash " n " was in pid " pid " again"); next }
+                seen[pid] = 1
+                crash_at[n] = t
+                crashes = n
+                next
+            }
+            if (index(m, "Watchdog started") == 1) {
+                if (started) { fail("the watchdog restarted during the crash loop (" launches " launches, " crashes " crashes so far)"); next }
+                started = 1
+                next
+            }
+            if (!started) next
+            if (m == throttled) {
+                if (crashes < max || launches < max) {
+                    fail("throttled after only " launches " launches and " crashes " crashes (LaunchBackoff allows " max " launches in 3 minutes)")
+                    next
+                }
+                if (throttles++ == 0) first_throttle = t
+                next
+            }
+            if (index(m, relaunch) != 1) next
+            n = launches + 1
+            fg = m
+            if (!sub(/^.*\(foreground: /, "", fg)) { fail("launch " n ": no foreground in \"" m "\""); next }
+            sub(/\)[ \t]*$/, "", fg)
+            if (fg == "" || fg == "unknown") {
+                fail("launch " n " was blind (foreground: unknown): the watchdog could not see the foreground app")
+                next
+            }
+            if (launches != crashes) { fail("launch " n " came without a crash since launch " launches ": an extra launch"); next }
+            if (n <= max) {
+                launch_at[n] = t
+                launches = n
+                next
+            }
+            # n == max + 1: the launch after the cooldown
+            if (throttles == 0) { fail("crash " max " was relaunched without being throttled"); next }
+            gap = t - launch_at[max]
+            after = t - crash_at[max]
+            if (after < quiet) { fail("relaunched " sec(after) " s after crash " max ", expected nothing for at least " quiet " s (cooldown)"); next }
+            if (gap < min_gap) { fail("launch " n " came " sec(gap) " s after launch " max ", expected a cooldown of about 60 s"); next }
+            if (after > late) { fail("launch " n " came only " sec(after) " s after crash " max ", expected within " late " s"); next }
+            launches = n
+            verdict = sprintf("ok %d launches, %d crashes: throttled %s s after crash %d (%d throttled checks), launch %d %s s after launch %d (%s s after crash %d)", \
+                launches, crashes, sec(first_throttle - crash_at[max]), max, throttles, n, sec(gap), max, sec(after), max)
+            done = 1
+        }
+        END {
+            if (verdict == "") {
+                if (!started) verdict = "incomplete no \"Watchdog started\" in the log"
+                else if (launches == 0) verdict = "incomplete the watchdog never launched the target"
+                else if (crashes < max) verdict = "incomplete only " crashes " crash(es) and " launches " launch(es) in the log"
+                else if (throttles == 0) verdict = "incomplete no \"relaunch throttled\" after crash " max
+                else verdict = "incomplete no launch after the cooldown"
+            }
+            print verdict
+            exit(verdict ~ /^ok / ? 0 : 1)
         }
     '
 }
@@ -494,6 +639,33 @@ in_deviceidle_whitelist() {
     [[ $'\n'$out$'\n' == *",$1,"* ]]
 }
 
+# appops_cmd ARGS...: `appops ARGS` in the device shell, output in APPOPS_OUT. Fails if the
+# command fails or the device doesn't know it ("Unknown command: ...").
+appops_cmd() {
+    local rc=0
+    APPOPS_OUT=$(adb_shell appops "$@" 2>&1) || rc=$?
+    detail "    appops $*: $(one_line "${APPOPS_OUT:-<no output>}") (exit $rc)"
+    ((rc == 0)) && [[ $APPOPS_OUT != *"Unknown command"* && $APPOPS_OUT != *Exception* ]]
+}
+
+# appops_save: `appops write-settings`, saves the app ops to disk now. Android otherwise saves a
+# change about 10 s later, and `adb reboot` or a power cut (no clean shutdown) before that loses it.
+appops_save() {
+    appops_cmd write-settings
+}
+
+# appops_reload: `appops read-settings`, replaces the app ops in memory with the ones saved on
+# disk: afterwards appops get shows what a reboot would start from
+appops_reload() {
+    appops_cmd read-settings
+}
+
+# appops_set_saved PKG OP MODE: sets an app op and saves it right away, so what a reboot keeps is
+# what the suite set
+appops_set_saved() {
+    appops_cmd set "$1" "$2" "$3" && appops_save
+}
+
 # prefs_xml: the loader's shared_prefs/loader.xml (the debug APK is debuggable, so run-as works)
 prefs_xml() {
     adb_shell run-as "$LOADER_PKG" cat shared_prefs/loader.xml 2>/dev/null
@@ -544,6 +716,17 @@ broadcast_result() {
     if [[ $1 =~ $re ]]; then printf '%s\n' "${BASH_REMATCH[1]}"; fi
 }
 
+# broadcast_data AM_OUTPUT: the result data am reported (nothing if there was none)
+broadcast_data() {
+    local re='result=-?[0-9]+, data="([^"]*)"'
+    if [[ $1 =~ $re ]]; then printf '%s\n' "${BASH_REMATCH[1]}"; fi
+}
+
+# broadcast_ok AM_OUTPUT: a receiver took it: result=-1 (RESULT_OK), data="OK"
+broadcast_ok() {
+    [[ "$(broadcast_result "$1")" == -1 && "$(broadcast_data "$1")" == OK ]]
+}
+
 # admin_try ACTION [EXTRAS...]: sends the command, succeeds on result=-1 (RESULT_OK)
 admin_try() {
     local out
@@ -563,14 +746,15 @@ admin_cmd() {
     fail "admin command $* was not accepted: $(one_line "$out")"
 }
 
-# target_cmd ACTION [PKG]: a command for the test app (EXIT, CRASH, PROBE_ADMIN)
+# target_cmd ACTION [PKG]: a command for the test app (EXIT, CRASH, PROBE_ADMIN). am's output is
+# left in TARGET_CMD_OUT.
 target_cmd() {
-    local action=$1 pkg=${2:-$TARGET_PKG} out
+    local action=$1 pkg=${2:-$TARGET_PKG}
     step "test app: $action ($pkg)"
-    out=$(adb_shell am broadcast --include-stopped-packages \
+    TARGET_CMD_OUT=$(adb_shell am broadcast --include-stopped-packages \
         -n "$pkg/$TARGET_RECEIVER" -a "$TARGET_ACTION.$action" 2>&1) || true
-    detail "      $(one_line "$out")"
-    [[ $out == *"Broadcast completed"* ]]
+    detail "      $(one_line "$TARGET_CMD_OUT")"
+    [[ $TARGET_CMD_OUT == *"Broadcast completed"* ]]
 }
 
 open_loader_ui() {
@@ -594,14 +778,38 @@ relaunched_since() {
     is_foreground "$2" && log_has "$1" WatchdogService "Relaunching $(re_escape "$2") \\("
 }
 
-# expect_relaunch SINCE PKG TIMEOUT_S [LABEL]: waits for the watchdog to bring PKG back after
-# SINCE; notes how long the relaunch took ("LABEL in N s")
+# expect_relaunch SINCE PKG TIMEOUT_S [LABEL [FOREGROUND]]: waits for the watchdog to bring PKG
+# back after SINCE; notes how long the relaunch took ("LABEL in N s", no note if LABEL is "").
+# FOREGROUND is what the relaunch's "Relaunching PKG (foreground: <fg>)" line must say:
+#   known (default)  anything but "unknown": the watchdog saw what was in front, i.e. it has usage
+#                    access and relaunched because the target left, not blind every 30 s
+#   unknown          the blind path (no usage access)
+#   any              not checked: first launches, where nothing may be known yet
+# Sets RELAUNCH_TS (device time of that line) and RELAUNCH_FG.
 expect_relaunch() {
-    local since=$1 pkg=$2 timeout=$3 label=${4:-relaunched} fg rel_ts pkg_re
+    local since=$1 pkg=$2 timeout=$3 label=${4-relaunched} want_fg=${5:-known} fg line pkg_re
+    RELAUNCH_TS=""
+    RELAUNCH_FG=""
     pkg_re=$(re_escape "$pkg")
     if wait_until "$timeout" relaunched_since "$since" "$pkg"; then
-        rel_ts=$(log_first_ts "$since" WatchdogService "Relaunching $pkg_re \\(") || rel_ts=""
-        if [[ -n $rel_ts ]]; then note "$label in $(ts_diff "$rel_ts" "$since") s"; fi
+        line=$(log_grep "$since" WatchdogService "Relaunching $pkg_re \\(" | awk 'NR == 1') || line=""
+        RELAUNCH_TS=$(printf '%s\n' "$line" | awk '{ print $1 }')
+        RELAUNCH_FG=$(printf '%s\n' "$line" | parse_relaunch_foreground)
+        if [[ -n $label && -n $RELAUNCH_TS ]]; then note "$label in $(ts_diff "$RELAUNCH_TS" "$since") s"; fi
+        case $want_fg in
+        known)
+            if [[ -z $RELAUNCH_FG || $RELAUNCH_FG == unknown ]]; then
+                fail "$pkg was relaunched blind: the watchdog logged 'Relaunching $pkg (foreground: ${RELAUNCH_FG:-?})', so it could not see which app was in front (appops GET_USAGE_STATS of the loader: $(appops_mode "$LOADER_PKG" GET_USAGE_STATS))"
+                return 1
+            fi
+            ;;
+        unknown)
+            if [[ $RELAUNCH_FG != unknown ]]; then
+                fail "the relaunch did not come from the blind path (foreground: ${RELAUNCH_FG:-?}, expected unknown)"
+                return 1
+            fi
+            ;;
+        esac
         return 0
     fi
     fg=$(foreground_pkg)

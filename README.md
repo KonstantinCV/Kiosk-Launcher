@@ -72,7 +72,7 @@ This is what CI runs. The loader APK is `app/build/outputs/apk/debug/app-debug.a
 ## Testing
 
 - **Unit tests:** `./gradlew testDebugUnitTest` runs the watchdog's logic (`WatchdogPolicy`, `LaunchBackoff`, `ForegroundState`) on the JVM.
-- **End-to-end tests:** `e2e/` installs the real loader APK on an Android emulator and drives it only over adb, the way it is used on a Quest: it runs `scripts/provision-quest.sh`, sends the adb commands above, makes a test app exit and crash, presses home, turns the screen off, updates the loader and reboots. 18 scenarios, each checking that the target comes back (or, when it shouldn't, that it doesn't).
+- **End-to-end tests:** `e2e/` installs the real loader APK on an Android emulator and drives it only over adb, the way it is used on a Quest: it runs `scripts/provision-quest.sh`, sends the adb commands above, makes a test app exit and crash, presses home, turns the screen off, updates the loader and reboots. 18 scenarios, each checking that the target comes back (or, when it shouldn't, that it doesn't). Relaunches must come from the watchdog seeing the target leave, not from its blind 30 s fallback, and the provisioned grants must be saved to disk and survive an `adb reboot`.
 
 Run them locally on Linux with KVM:
 
@@ -84,7 +84,7 @@ e2e/run.sh                # results in e2e/results/
 
 CI runs the same suite on every build, on API 29 (the minimum) and API 34 (what Horizon OS is built on), against the exact `app-debug` APK the build job uploads. Results are on the run page and in the `e2e-results-api29` / `e2e-results-api34` artifacts.
 
-The suite can also run against a real Quest with `e2e/run.sh --allow-real-device --skip reboot` (the `reboot` scenario would reboot the headset). It uninstalls and reinstalls the loader, which wipes its settings, installs the test apps and changes a few device settings, so provision the headset again afterwards. See [e2e/README.md](e2e/README.md) for the scenarios, options and troubleshooting.
+The suite can also run against a real Quest with `e2e/run.sh --allow-real-device --skip reboot` (the `reboot` scenario would reboot the headset). It installs two test apps, changes a few device settings, and leaves the loader in a test configuration: the test app as its target, a 3 s grace period, and possibly disabled or paused if the run was interrupted. That stays until the loader is uninstalled and the headset provisioned again. Running `provision-quest.sh` alone sets the target but keeps the rest, because it reinstalls the loader with `adb install -r`. [e2e/README.md](e2e/README.md#running-on-a-headset) lists how to undo all of it, and covers the scenarios, options and troubleshooting.
 
 ## Credits
 

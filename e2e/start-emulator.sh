@@ -5,11 +5,12 @@
 #   e2e/run.sh --serial "$serial"
 #
 # Options: --api LEVEL (default 34), --name AVD (default kiosk-e2e-<api>).
-# Installs what is missing with sdkmanager (emulator, platform-tools and the AOSP "default"
-# x86_64 system image: Meta Horizon OS is AOSP-based without Google services, so no Google APIs
-# image), creates the AVD if needed, starts it in the background (log in
+# Installs what is missing with sdkmanager (emulator, platform-tools if there is no adb, and the
+# AOSP "default" x86_64 system image: Meta Horizon OS is AOSP-based without Google services, so no
+# Google APIs image), creates the AVD if needed, starts it in the background (log in
 # e2e/results/emulator-<api>.log) and waits for boot. If that AVD is already running, prints its
-# serial. Needs a Linux host with KVM. Progress goes to stderr, only the serial to stdout.
+# serial. Uses the SDK's adb, else the one on PATH, like e2e/run.sh. Needs a Linux host with KVM.
+# Progress goes to stderr, only the serial to stdout.
 set -euo pipefail
 
 API=34
@@ -69,7 +70,7 @@ done
 NAME=${NAME:-kiosk-e2e-$API}
 [[ $NAME =~ ^[A-Za-z0-9._-]+$ ]] || die "AVD names may only contain letters, digits, '.', '_' and '-'"
 
-REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
+REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P) || die "cannot find the repository root"
 RESULTS_DIR=$REPO_ROOT/e2e/results
 LOG_FILE=$RESULTS_DIR/emulator-$API.log
 IMAGE="system-images;android-$API;default;x86_64"
@@ -101,9 +102,22 @@ sdk_tool() {
     command -v "$1" 2>/dev/null
 }
 
+# find_adb: the SDK's adb, else the one on PATH. e2e/run.sh picks it the same way: two different
+# adb versions keep restarting each other's server.
+find_adb() {
+    local sdk
+    for sdk in "${ANDROID_HOME:-}" "${ANDROID_SDK_ROOT:-}"; do
+        if [[ -n $sdk && -x $sdk/platform-tools/adb ]]; then
+            printf '%s\n' "$sdk/platform-tools/adb"
+            return 0
+        fi
+    done
+    command -v adb 2>/dev/null
+}
+
 missing=()
 [[ -x $SDK/emulator/emulator ]] || missing+=(emulator)
-[[ -x $SDK/platform-tools/adb ]] || missing+=(platform-tools)
+ADB=$(find_adb) || missing+=(platform-tools)
 [[ -d $SDK/system-images/android-$API/default/x86_64 ]] || missing+=("$IMAGE")
 if ((${#missing[@]} > 0)); then
     SDKMANAGER=$(sdk_tool sdkmanager) ||
@@ -117,7 +131,11 @@ if ((${#missing[@]} > 0)); then
     set -o pipefail
 fi
 EMULATOR=$SDK/emulator/emulator
-ADB=$SDK/platform-tools/adb
+[[ -x $EMULATOR ]] || die "$EMULATOR is missing after installing it with sdkmanager"
+if [[ -z $ADB ]]; then
+    ADB=$(find_adb) || die "adb is missing after installing platform-tools with sdkmanager"
+fi
+info "using $ADB"
 
 # --- AVD --------------------------------------------------------------------------------------
 avds=$("$EMULATOR" -list-avds 2>/dev/null || true)
@@ -132,7 +150,10 @@ fi
 
 # --- Already running? -------------------------------------------------------------------------
 "$ADB" start-server >/dev/null 2>&1 || true
-devices=$("$ADB" devices 2>/dev/null | awk 'NR > 1 && NF >= 2 { print $1 }')
+# Every serial adb lists, whatever its state: an emulator still starting up holds its port too.
+# adb's own messages go to stderr, so they reach the user and not the list.
+adb_devices=$("$ADB" devices </dev/null) || die "'$ADB devices' failed"
+devices=$(printf '%s\n' "$adb_devices" | tr -d '\r' | awk 'NR > 1 && NF >= 2 { print $1 }')
 
 boot_completed() {
     [[ "$("$ADB" -s "$1" shell getprop sys.boot_completed 2>/dev/null </dev/null | tr -d '\r')" == 1 ]]
@@ -156,7 +177,11 @@ wait_for_boot() {
 
 for serial in $devices; do
     [[ $serial == emulator-* ]] || continue
-    running=$("$ADB" -s "$serial" emu avd name 2>/dev/null </dev/null | tr -d '\r' | awk 'NR == 1 { n = $0 } END { print n }')
+    # An emulator that doesn't answer (still starting, or hung) is taken for another AVD
+    if ! running=$("$ADB" -s "$serial" emu avd name 2>/dev/null </dev/null | tr -d '\r' | awk 'NR == 1 { n = $0 } END { print n }'); then
+        info "could not ask $serial for its AVD name; assuming it is not $NAME"
+        running=""
+    fi
     if [[ $running == "$NAME" ]]; then
         info "$NAME is already running as $serial"
         wait_for_boot "$serial"
@@ -173,7 +198,7 @@ while printf '%s\n' "$devices" | grep -Fx -- "emulator-$port" >/dev/null; do
 done
 SERIAL=emulator-$port
 
-mkdir -p "$RESULTS_DIR"
+mkdir -p "$RESULTS_DIR" || die "cannot create $RESULTS_DIR"
 info "starting $NAME as $SERIAL (log: ${LOG_FILE#"$REPO_ROOT"/})"
 emulator_args=(-avd "$NAME" -port "$port" -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect)
 # In its own session when possible, so Ctrl-C here or closing the terminal doesn't kill it
