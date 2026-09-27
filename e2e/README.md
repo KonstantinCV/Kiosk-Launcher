@@ -42,7 +42,7 @@ e2e/run.sh --skip reboot,crash-loop-backoff
 
 They run in this order. Except where a scenario tests it, the grace period is 3 s to keep the run short. "Comes back" means the watchdog logged `Relaunching <pkg> (foreground: <app>)` after the exit, crash or key press, and the target app is the resumed activity again within 30 s; timeouts are generous because CI emulators render in software and are slow. Timings are taken from the device log.
 
-A relaunch must also name the app that was in front, usually the home screen (`foreground: com.android.launcher3` on the emulators). `foreground: unknown` means the watchdog couldn't see the foreground app (no usage access) and relaunched only because its blind 30 s timer ran out. That fails every scenario except `blind-mode`, which requires it. Launches that don't follow an exit (leaving the loader UI in `launches-target`, a new target in `vr-target`) aren't checked, and the launch right after boot is only noted in the summary.
+A relaunch must also name the app that was in front, usually the home screen (`foreground: com.android.launcher3` on the emulators). `foreground: unknown` means the watchdog knew of no resumed activity; after an exit on the emulators, where the home screen always resumes, that means it couldn't see the foreground app (no usage access) and relaunched only because its blind 30 s timer ran out. That fails every scenario except `blind-mode`, which requires it. Launches that don't follow an exit (leaving the loader UI in `launches-target`, a new target in `vr-target`) aren't checked, and the launch right after boot is only noted in the summary.
 
 The watchdog counts the grace period from its own launch until a check (every 2 s) has seen the target in front. So where a scenario times the grace period (`grace-period`, `screen-off` and the exit after `reboot`), it first waits 3 s with the target in front; otherwise it would be timing the launch, not the exit. `target-stays-put` and `loader-crash` wait the same 3 s first, so the watchdog has seen the target in front before they check that it is left alone.
 
@@ -126,7 +126,7 @@ The log lines that matter, by tag:
 
 | Tag | Lines |
 |---|---|
-| `WatchdogService` | `Watchdog started, target=<pkg>`, `Relaunching <pkg> (foreground: <pkg or unknown>)`, `<pkg> keeps exiting, relaunch throttled` |
+| `WatchdogService` | `Watchdog started, target=<pkg>`, `Relaunching <pkg> (foreground: <pkg or unknown>)`, `<pkg> keeps exiting, relaunch throttled` (once each time the throttle starts), `<pkg> is not installed or has no launchable activity` (once per target), and `Watchdog check failed` with a stack trace if a check throws (at most once a minute) |
 | `TargetLauncher` | `Launched <pkg>`, and warnings when a launch fails |
 | `AdminCommandReceiver` | `<action> applied: target=... enabled=... grace=...s pausedUntil=...`, and warnings for rejected commands |
 | `E2ETarget` | `CREATED`, `RESUMED`, `PAUSED`, `DESTROYED` and `CRASH` (each `pkg=<pkg> pid=<pid>`), `EXIT pkg=<pkg>`, `PROBE_ADMIN sent`, `PROBE_ADMIN result=<code> data=<data>` |
@@ -193,7 +193,7 @@ A restart ends the log command. Start it again (without `adb logcat -c`) once th
 |---|---|---|
 | 1 | Restart the headset from its power menu. | The target starts on its own shortly after the home environment appears: `Watchdog started`, then `Relaunching <target>`. |
 | 2 | Restart it with `adb reboot` (like a power cut). | The same. `adb shell appops get com.osamaalek.kiosklauncher` still shows `SYSTEM_ALERT_WINDOW: allow` and `GET_USAGE_STATS: allow`. |
-| 3 | Quit the target from its own menu. | It comes back after the grace period (10 s). The log line reads `(foreground: <some package>)`, not `(foreground: unknown)`. |
+| 3 | Quit the target from its own menu. | It comes back after the grace period (10 s). The log line reads `(foreground: <some package>)`, not `(foreground: unknown)`. If it reads `unknown`, check `adb shell appops get com.osamaalek.kiosklauncher GET_USAGE_STATS`: with `allow`, Horizon reported no activity resumed after the exit, which is worth noting. |
 | 4 | `adb shell am crash <target package>` (or `am force-stop`). | It comes back after the grace period. |
 | 5 | Open the Meta (universal) menu over the target and leave it open for 15 s. | Note what happens: the menu may count as leaving the target, and the target is brought back over it after 10 s. Say whether that is acceptable. Right after opening the menu, `adb shell dumpsys usagestats \| grep -E 'ACTIVITY_(RESUMED\|PAUSED)' \| tail -5` shows how Horizon reports it. |
 | 6 | Take the headset off for 30 s, then put it back on. | Nothing is launched while the display is off; the target is still there, or comes back within the grace period. |

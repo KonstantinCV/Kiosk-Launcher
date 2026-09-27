@@ -7,12 +7,12 @@ It doesn't need device owner, Meta Horizon managed services or a third-party MDM
 ## How it works
 
 - **Boot:** `BootReceiver` starts `WatchdogService`, a foreground service.
-- **Watchdog:** every 2 seconds the service checks which app is in the foreground (from usage stats). If the target has been out of the foreground for the grace period (10 s by default), it launches it again. This covers first boot, a normal exit and a crash.
+- **Watchdog:** every 2 seconds the service checks whether the target is in the foreground. It reads the activity events Android records for usage stats since boot, and counts the target as in front while any of its activities is resumed, even if another app's activity (a system menu, a second panel) is resumed alongside it. If the target has been out of the foreground for the grace period (10 s by default), it launches it again. This covers first boot, a normal exit and a crash.
 - **Sleep:** nothing happens while the headset is asleep (display off). The grace period restarts on wake.
 - **Crash loops:** after 5 launches in 3 minutes, the watchdog slows to one attempt per minute.
 - **Loader UI:** while the loader's own screens are open, the watchdog stands down, so an operator can change settings without the target being launched on top of them.
 
-The loader UI shows the target app, lets you **choose another app**, launch it now, disable the watchdog, change the grace period, pause for 30 minutes, and see which one-time grants are missing.
+The loader UI shows the target app, lets you **choose another app**, launch it now, disable the watchdog, change the grace period (3 to 300 s), pause for 30 minutes, and see which one-time grants are missing.
 
 ## Setup on a Quest
 
@@ -57,6 +57,12 @@ adb shell am broadcast -n $R -a $A.DISABLE                  # or ENABLE
 adb shell am broadcast -n $R -a $A.SET_GRACE --ei seconds 15
 ```
 
+`am broadcast` prints `result=-1, data="OK"` when the command was applied. Otherwise it prints `result=1` and the reason, and nothing is changed. These are rejected:
+
+- `SET_TARGET` with a package that isn't installed or has nothing to launch, or with the loader's own package. Spaces around the name are trimmed first.
+- `PAUSE` with `minutes` below 1, or not sent as an int (`--ei`). Without `minutes` it pauses for 30.
+- `SET_GRACE` with `seconds` missing, not sent as an int (`--ei`), or outside 3 to 300.
+
 A default target can also be built into the APK: `./gradlew assembleDebug -PloaderTargetPackage=com.example.headjackapp`.
 
 ## Building
@@ -84,7 +90,7 @@ To build it locally, set `LOADER_KEYSTORE` to the keystore's path and the other 
 
 ## Testing
 
-- **Unit tests:** `./gradlew testDebugUnitTest` runs the watchdog's logic (`WatchdogPolicy`, `LaunchBackoff`, `ForegroundState`) on the JVM, and, with Robolectric, the adb command receiver, `TargetLauncher` (including the VR-category fallback) and `LoaderConfig`. The first run downloads Robolectric's Android SDK jar (~150 MB).
+- **Unit tests:** `./gradlew testDebugUnitTest` runs the watchdog's logic (`WatchdogPolicy`, `LaunchBackoff`, `ForegroundState`, `ForegroundTracker` with a fake event source, and all of them together against a simulated device in `WatchdogLoopTest`) on the JVM, and, with Robolectric, the adb command receiver, the settings screen, `TargetLauncher` (including the VR-category fallback) and `LoaderConfig`. The first run downloads Robolectric's Android SDK jar (~150 MB).
 - **Lint:** `./gradlew lintDebug` has no findings; `app/lint.xml` lists the checks that are off and why.
 - **End-to-end tests:** `e2e/` installs the real loader APK on an Android emulator and drives it only over adb, the way it is used on a Quest: it runs `scripts/provision-quest.sh`, sends the adb commands above, makes a test app exit and crash, presses home, turns the screen off, updates the loader and reboots. 20 scenarios, each checking that the target comes back (or, when it shouldn't, that it doesn't). Relaunches must come from the watchdog seeing the target leave, not from its blind 30 s fallback, and the provisioned grants must be saved to disk and survive an `adb reboot`.
 
