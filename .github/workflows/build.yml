@@ -38,10 +38,28 @@ jobs:
     - name: Grant execute permission to gradlew
       run: chmod +x gradlew
 
-    - name: Unit tests and debug build
+    # Robolectric downloads its Android SDK jar (~150 MB) into ~/.m2, which the Gradle cache above
+    # doesn't cover
+    - name: Cache Robolectric SDK jars
+      uses: actions/cache@v4
+      with:
+        path: ~/.m2/repository/org/robolectric
+        key: robolectric-${{ hashFiles('app/build.gradle') }}
+
+    - name: Unit tests, lint and debug build
       env:
         TARGET_PACKAGE: ${{ github.event.inputs.target_package }}
-      run: ./gradlew testDebugUnitTest assembleDebug :testapp:assembleDebug -PloaderTargetPackage="$TARGET_PACKAGE"
+      run: ./gradlew testDebugUnitTest lintDebug assembleDebug :testapp:assembleDebug -PloaderTargetPackage="$TARGET_PACKAGE"
+
+    - name: Upload test and lint reports
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: reports
+        path: |
+          app/build/reports/
+          app/build/test-results/
+        if-no-files-found: ignore
 
     - name: Upload APK
       uses: actions/upload-artifact@v4

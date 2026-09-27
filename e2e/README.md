@@ -203,7 +203,7 @@ Send back `quest-checks.log`, the `e2e/results/` folder from the automated run, 
 
 `.github/workflows/build.yml` (Build Android App) runs on every push, pull request and manual run:
 
-1. **build** runs `./gradlew testDebugUnitTest assembleDebug :testapp:assembleDebug -PloaderTargetPackage=...`, uploads the loader as `app-debug` and the two test apps as `e2e-target-apks`.
+1. **build** runs `./gradlew testDebugUnitTest lintDebug assembleDebug :testapp:assembleDebug -PloaderTargetPackage=...`, uploads the loader as `app-debug` and the two test apps as `e2e-target-apks`.
 2. **E2E (API 29)** and **E2E (API 34)** download both artifacts, enable KVM on the runner, boot an AOSP `default` x86_64 emulator with [android-emulator-runner](https://github.com/ReactiveCircus/android-emulator-runner) (headless, SwiftShader GPU, no snapshot) and run `bash e2e/run.sh` with the downloaded APKs. The APK under test is exactly the `app-debug` artifact people download.
 
 Both API levels run even if one fails, each with a 45-minute limit. Each adds its `summary.md` to the run page and uploads its results directory as `e2e-results-api29` or `e2e-results-api34`, pass or fail. A newer run of the same kind for the same branch or pull request cancels the one in progress: a push cancels an older push's run, a manual run an older manual run. A manual run and a push don't cancel each other.

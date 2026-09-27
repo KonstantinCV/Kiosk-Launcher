@@ -1,6 +1,8 @@
 *.iml
 .gradle
 /local.properties
+# Kotlin 2 build state
+.kotlin/
 /.idea/caches
 /.idea/libraries
 /.idea/modules.xml
