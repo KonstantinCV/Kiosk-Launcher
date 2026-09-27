@@ -180,7 +180,16 @@ scripts/provision-quest.sh app-debug.apk <target package>
 
 ### Manual checks on a Quest
 
-Some things only a headset can answer: whether Horizon OS lets the grants do their job, and how its own UI shows up to the watchdog. After the automated run above, uninstall and provision the headset for its real target (the commands above), then keep a log running in a second terminal:
+Some things only a headset can answer: whether Horizon OS lets the grants do their job, and how its own UI shows up to the watchdog. `e2e/quest-check.sh` runs all of it in one go: the automated suite on the headset, then it undoes the test setup, provisions the headset for its real target and walks through the checks below. adb does and times what it can (the crash, both restarts, the grants after a restart, the loader screen, the display state), keeps a log that survives the restarts, and asks you for the rest. It ends with one zip to send back, and leaves the headset provisioned.
+
+```sh
+e2e/quest-check.sh --target <your app's package> --loader-apk app-debug.apk \
+    --target-apk testapp-launcher-debug.apk --vr-target-apk testapp-vr-debug.apk
+```
+
+The APKs are a local build's by default, or the `app-debug` and `e2e-target-apks` artifacts of a CI run as above. `--provision-apk app-release.apk` leaves the signed release build on the headset instead of the debug one, `--skip-suite` runs only the checks, and `s` skips a check. It takes about 30 minutes.
+
+To do the checks by hand instead, provision the headset for its real target after the automated run (the commands above) and keep a log running in a second terminal:
 
 ```sh
 adb logcat -c
@@ -200,7 +209,7 @@ A restart ends the log command. Start it again (without `adb logcat -c`) once th
 | 7 | Open the loader from the app library and wait 15 s. | Nothing is launched over the loader's own screen. |
 | 8 | Start the target for the first time, before it has been granted its runtime permissions (if it asks for any), and leave its permission prompt open for 15 s. | Note whether the watchdog closes the prompt by relaunching the target. Installing the target with `adb install -g` grants those permissions up front, so no prompt appears. |
 
-Send back `quest-checks.log`, the `e2e/results/` folder from the automated run, the headset's Horizon OS version (`adb shell getprop ro.build.display.id`) and a note per check.
+By hand, send back `quest-checks.log`, the `e2e/results/` folder from the automated run, the headset's Horizon OS version (`adb shell getprop ro.build.display.id`) and a note per check. The script's zip has all of that.
 
 ## CI
 
