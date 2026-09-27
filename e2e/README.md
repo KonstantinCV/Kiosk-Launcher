@@ -156,7 +156,7 @@ e2e/run.sh --allow-real-device --skip reboot --loader-apk app-debug.apk \
     --target-apk testapp-launcher-debug.apk --vr-target-apk testapp-vr-debug.apk
 ```
 
-A Quest turns its display off when it isn't worn, which stops the watchdog, so wear it or cover the proximity sensor while the suite runs. The Horizon home and the Meta button also behave differently from an emulator's home screen, so treat a failure on a headset as something to look into, not proof of a loader bug.
+A Quest turns its display off when it isn't worn, which stops the watchdog, so wear it or cover the proximity sensor while the suite runs. On many Horizon OS versions `adb shell am broadcast -a com.oculus.vrpowermanager.prox_close` keeps it on as if worn until the next reboot; `adb shell am broadcast -a com.oculus.vrpowermanager.automation_disable` undoes it. The Horizon home and the Meta button also behave differently from an emulator's home screen, so treat a failure on a headset as something to look into, not proof of a loader bug.
 
 Afterwards the loader is still set up for the tests: the test app as its target, a 3 s grace period, and disabled or paused if the run stopped in the middle of a scenario. Running `provision-quest.sh` again sets the new target but keeps the rest, because it reinstalls the loader with `adb install -r`. So uninstall the loader first, then remove the test apps, undo the settings and provision the headset for its real target:
 
@@ -182,8 +182,10 @@ Some things only a headset can answer: whether Horizon OS lets the grants do the
 
 ```sh
 adb logcat -c
-adb logcat -v time WatchdogService:I TargetLauncher:I AdminCommandReceiver:I ActivityTaskManager:I '*:S' | tee quest-checks.log
+adb logcat -v time WatchdogService:I TargetLauncher:I AdminCommandReceiver:I ActivityTaskManager:I '*:S' | tee -a quest-checks.log
 ```
+
+A restart ends the log command. Start it again (without `adb logcat -c`) once the headset is back: logcat first prints what was logged since boot, so the boot launch is still captured, and `tee -a` appends to the same file.
 
 | # | Do | Expect |
 |---|---|---|
