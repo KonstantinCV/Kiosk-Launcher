@@ -77,14 +77,20 @@ This is what CI runs. The loader APK is `app/build/outputs/apk/debug/app-debug.a
 
 ### Release signing
 
-Every CI run signs `app-debug` with a new throwaway debug key, so a headset can't take a newer CI build over an older one (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`), and uninstalling first wipes the loader's settings. For headsets, use a release build signed with your own key instead. Create the key once and keep a backup of it: without it, no later build can update the headsets.
+Every CI run signs `app-debug` with a new throwaway debug key, so a headset can't take a newer CI build over an older one (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`), and uninstalling first wipes the loader's settings. For headsets, use a release build signed with your own key instead. Set it up once, on your own computer:
+
+```sh
+scripts/setup-release-signing.sh    # key in ~/kiosk-loader-release.jks; pass another path as the argument
+```
+
+It asks for a password, creates the key and prints its SHA-256 fingerprint. If the [GitHub CLI](https://cli.github.com) is installed and logged in (`gh auth login`), it also stores the four secrets CI needs; otherwise it lists them for *Settings > Secrets and variables > Actions*. **Back up the key and its password**: without them no later build can update the headsets.
+
+CI then also uploads a signed `app-release`. Without the secrets, for example on pull requests from forks, that step is skipped. The secrets are `LOADER_KEYSTORE_BASE64` (the keystore, base64), `LOADER_KEYSTORE_PASSWORD`, `LOADER_KEY_ALIAS` (`loader`) and `LOADER_KEY_PASSWORD` (the same as the keystore password). To make the key by hand instead:
 
 ```sh
 keytool -genkeypair -keystore loader-release.jks -alias loader -keyalg RSA -keysize 4096 -validity 10000
 base64 -w0 loader-release.jks    # macOS: base64 -i loader-release.jks
 ```
-
-In the GitHub repository, under *Settings > Secrets and variables > Actions*, add `LOADER_KEYSTORE_BASE64` (the base64 output), `LOADER_KEYSTORE_PASSWORD`, `LOADER_KEY_ALIAS` (`loader`) and `LOADER_KEY_PASSWORD` (the same as the keystore password, since keytool makes PKCS12 keystores by default). CI then also uploads a signed `app-release`. Without the secrets, for example on pull requests from forks, that step is skipped.
 
 To build it locally, set `LOADER_KEYSTORE` to the keystore's path and the other three variables, then run `./gradlew assembleRelease` (they can also go in `~/.gradle/gradle.properties`). Without them, `assembleRelease` gives an unsigned APK. A headset that has a debug build needs `adb uninstall com.osamaalek.kiosklauncher` once before the first release build, then provisioning again.
 
