@@ -4,9 +4,8 @@ package com.osamaalek.kiosklauncher.watchdog
  * Decides when the target app has to be (re)launched. Plain Kotlin with no Android
  * dependencies so it can be unit tested on the JVM.
  *
- * The target is launched once it has been out of the foreground for [Snapshot.graceMs].
- * The same rule covers first boot, a normal exit and a crash: in every case some other
- * activity (usually the Horizon home) takes the foreground.
+ * The target is launched once none of its activities has been resumed for [Snapshot.graceMs].
+ * The same rule covers first boot, a normal exit and a crash.
  */
 class WatchdogPolicy {
 
@@ -19,16 +18,29 @@ class WatchdogPolicy {
         val paused: Boolean,
         val loaderUiVisible: Boolean,
         val interactive: Boolean,
-        /** Whether usage access is granted, so [foregroundPackage] can be trusted. */
+        /** Whether usage access is granted, so the next three can be trusted. */
         val foregroundKnown: Boolean,
+        /** Whether any activity of the target is resumed. */
+        val targetResumed: Boolean,
+        /** The most recently resumed app that still is; null if no activity is known to be resumed. */
         val foregroundPackage: String?,
+        /** Grows with every activity event seen; unchanged means nothing was resumed or paused. */
+        val activityEvents: Int,
         val graceMs: Long,
         /** Used without usage access: how often to bring the target back to the front. */
         val blindIntervalMs: Long,
     )
 
+    private class Launch(
+        val at: Long,
+        val targetPackage: String,
+        /** Nothing was known to be resumed when it was made. */
+        val intoUnknown: Boolean,
+        val activityEvents: Int,
+    )
+
     private var notTargetSince: Long? = null
-    private var lastLaunchAt: Long? = null
+    private var lastLaunch: Launch? = null
 
     fun evaluate(s: Snapshot): Decision {
         if (!s.enabled || s.targetPackage.isEmpty() || s.paused || s.loaderUiVisible || !s.interactive) {
@@ -36,7 +48,7 @@ class WatchdogPolicy {
             notTargetSince = null
             return Decision.IDLE
         }
-        if (s.foregroundKnown && s.foregroundPackage == s.targetPackage) {
+        if (s.foregroundKnown && (s.targetResumed || alreadyInFront(s))) {
             notTargetSince = null
             return Decision.IDLE
         }
@@ -47,13 +59,27 @@ class WatchdogPolicy {
         if (!s.foregroundKnown) {
             // Can't see the foreground app, so relaunching is the only way to recover from a crash.
             // A launch intent for an app that is already in front just brings its task forward.
-            val last = lastLaunchAt
-            if (last != null && s.now - last < s.blindIntervalMs) return Decision.WAIT
+            val last = lastLaunch
+            if (last != null && s.now - last.at < s.blindIntervalMs) return Decision.WAIT
         }
 
         // Give the launch its own grace period before trying again
         notTargetSince = s.now
-        lastLaunchAt = s.now
+        val intoUnknown = s.foregroundKnown && s.foregroundPackage == null
+        lastLaunch = Launch(s.now, s.targetPackage, intoUnknown, s.activityEvents)
         return Decision.LAUNCH
+    }
+
+    /**
+     * Launching an app whose activity is already resumed on top changes nothing, so no event
+     * follows. When nothing was known to be resumed before the launch (the target came up before
+     * the events the tracker reads) and a whole grace period passed without an event, the target
+     * was already in front. Not when another app was known to be in front: then the silence means
+     * the launch was blocked, and it has to be retried.
+     */
+    private fun alreadyInFront(s: Snapshot): Boolean {
+        val launch = lastLaunch ?: return false
+        return launch.intoUnknown && launch.targetPackage == s.targetPackage &&
+            launch.activityEvents == s.activityEvents && s.now - launch.at >= s.graceMs
     }
 }

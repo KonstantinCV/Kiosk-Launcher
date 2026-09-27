@@ -51,7 +51,7 @@ class WatchdogService : Service() {
     override fun onCreate() {
         super.onCreate()
         config = LoaderConfig(this)
-        tracker = ForegroundTracker(this)
+        tracker = ForegroundTracker(UsageEventSource(this))
         powerManager = getSystemService(PowerManager::class.java)
 
         createChannel()
@@ -83,7 +83,8 @@ class WatchdogService : Service() {
         val now = System.currentTimeMillis()
         val target = config.targetPackage
         val foregroundKnown = Permissions.hasUsageAccess(this)
-        val foreground = if (foregroundKnown) tracker.update(now) else null
+        if (foregroundKnown) tracker.update()
+        val foreground = if (foregroundKnown) tracker.foregroundPackage else null
 
         val decision = policy.evaluate(
             WatchdogPolicy.Snapshot(
@@ -94,7 +95,9 @@ class WatchdogService : Service() {
                 loaderUiVisible = LoaderActivity.isVisible,
                 interactive = powerManager.isInteractive,
                 foregroundKnown = foregroundKnown,
+                targetResumed = foregroundKnown && tracker.isResumed(target),
                 foregroundPackage = foreground,
+                activityEvents = tracker.activityEvents,
                 graceMs = config.graceSeconds * 1000L,
                 blindIntervalMs = BLIND_INTERVAL_MS,
             )
