@@ -4,6 +4,10 @@
 # Needs developer mode on the headset and adb access (USB, or wireless adb).
 # Usage: scripts/provision-quest.sh <loader.apk> <target package> [adb serial]
 #   e.g. scripts/provision-quest.sh app-debug.apk com.example.headjackapp
+#
+# Install the target first, with `adb install -g <target.apk>` so its runtime permissions are
+# granted up front: the watchdog relaunches the target over a permission prompt that stays open
+# longer than the grace period, which may close the prompt (manual check 8 in e2e/README.md).
 set -euo pipefail
 
 if [[ $# -lt 2 ]]; then

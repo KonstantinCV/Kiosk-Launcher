@@ -198,6 +198,7 @@ A restart ends the log command. Start it again (without `adb logcat -c`) once th
 | 5 | Open the Meta (universal) menu over the target and leave it open for 15 s. | Note what happens: the menu may count as leaving the target, and the target is brought back over it after 10 s. Say whether that is acceptable. Right after opening the menu, `adb shell dumpsys usagestats \| grep -E 'ACTIVITY_(RESUMED\|PAUSED)' \| tail -5` shows how Horizon reports it. |
 | 6 | Take the headset off for 30 s, then put it back on. | Nothing is launched while the display is off; the target is still there, or comes back within the grace period. |
 | 7 | Open the loader from the app library and wait 15 s. | Nothing is launched over the loader's own screen. |
+| 8 | Start the target for the first time, before it has been granted its runtime permissions (if it asks for any), and leave its permission prompt open for 15 s. | Note whether the watchdog closes the prompt by relaunching the target. Installing the target with `adb install -g` grants those permissions up front, so no prompt appears. |
 
 Send back `quest-checks.log`, the `e2e/results/` folder from the automated run, the headset's Horizon OS version (`adb shell getprop ro.build.display.id`) and a note per check.
 
