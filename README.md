@@ -60,8 +60,27 @@ A default target can also be built into the APK: `./gradlew assembleDebug -Pload
 Android Gradle Plugin 8.7, Kotlin 2.0, JDK 17, compile SDK 35, target SDK 34 (Meta Horizon OS is based on Android 14), min SDK 29.
 
 ```sh
-./gradlew testDebugUnitTest assembleDebug
+./gradlew testDebugUnitTest assembleDebug :testapp:assembleDebug
 ```
+
+This is what CI runs. The loader APK is `app/build/outputs/apk/debug/app-debug.apk`. The `testapp` module is a small target app used only by the end-to-end tests below; it is never shipped.
+
+## Testing
+
+- **Unit tests:** `./gradlew testDebugUnitTest` runs the watchdog's logic (`WatchdogPolicy`, `LaunchBackoff`, `ForegroundState`) on the JVM.
+- **End-to-end tests:** `e2e/` installs the real loader APK on an Android emulator and drives it only over adb, the way it is used on a Quest: it runs `scripts/provision-quest.sh`, sends the adb commands above, makes a test app exit and crash, presses home, turns the screen off, updates the loader and reboots. 18 scenarios, each checking that the target comes back (or, when it shouldn't, that it doesn't).
+
+Run them locally on Linux with KVM:
+
+```sh
+./gradlew testDebugUnitTest assembleDebug :testapp:assembleDebug
+e2e/start-emulator.sh     # headless API 34 emulator; --api 29 for the other CI image
+e2e/run.sh                # results in e2e/results/
+```
+
+CI runs the same suite on every build, on API 29 (the minimum) and API 34 (what Horizon OS is built on), against the exact `app-debug` APK the build job uploads. Results are on the run page and in the `e2e-results-api29` / `e2e-results-api34` artifacts.
+
+The suite can also run against a real Quest with `e2e/run.sh --allow-real-device --skip reboot` (the `reboot` scenario would reboot the headset). It uninstalls and reinstalls the loader, which wipes its settings, installs the test apps and changes a few device settings, so provision the headset again afterwards. See [e2e/README.md](e2e/README.md) for the scenarios, options and troubleshooting.
 
 ## Credits
 

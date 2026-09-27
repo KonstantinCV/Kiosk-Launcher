@@ -10,6 +10,14 @@ on:
         required: false
         default: ''
 
+permissions:
+  contents: read
+
+# A newer push to the same branch or pull request makes the older run pointless
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -31,10 +39,85 @@ jobs:
     - name: Unit tests and debug build
       env:
         TARGET_PACKAGE: ${{ github.event.inputs.target_package }}
-      run: ./gradlew testDebugUnitTest assembleDebug -PloaderTargetPackage="$TARGET_PACKAGE"
+      run: ./gradlew testDebugUnitTest assembleDebug :testapp:assembleDebug -PloaderTargetPackage="$TARGET_PACKAGE"
 
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
         name: app-debug
         path: app/build/outputs/apk/debug/app-debug.apk
+
+    # Test-only apps for the e2e job, flattened so the artifact holds just the two APKs
+    - name: Collect E2E target APKs
+      run: |
+        mkdir -p e2e-target-apks
+        cp testapp/build/outputs/apk/launcher/debug/testapp-launcher-debug.apk \
+           testapp/build/outputs/apk/vr/debug/testapp-vr-debug.apk \
+           e2e-target-apks/
+
+    - name: Upload E2E target APKs
+      uses: actions/upload-artifact@v4
+      with:
+        name: e2e-target-apks
+        path: e2e-target-apks/*.apk
+        if-no-files-found: error
+
+  # Black-box tests of the exact APK uploaded above, on AOSP emulators (see e2e/README.md)
+  e2e:
+    name: E2E (API ${{ matrix.api-level }})
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        # 29: the loader's minSdk. 34: Android 14, what Meta Horizon OS is built on.
+        api-level: [29, 34]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Enable KVM
+      run: |
+        echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+        sudo udevadm control --reload-rules
+        sudo udevadm trigger --name-match=kvm
+
+    - name: Download loader APK
+      uses: actions/download-artifact@v4
+      with:
+        name: app-debug
+        path: e2e-apks/loader
+
+    - name: Download E2E target APKs
+      uses: actions/download-artifact@v4
+      with:
+        name: e2e-target-apks
+        path: e2e-apks/targets
+
+    # The runner runs each script line on its own, so the command stays on one line
+    - name: Run E2E suite
+      uses: reactivecircus/android-emulator-runner@v2
+      with:
+        api-level: ${{ matrix.api-level }}
+        target: default
+        arch: x86_64
+        disable-animations: true
+        emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -no-snapshot
+        script: bash e2e/run.sh --loader-apk e2e-apks/loader/app-debug.apk --target-apk e2e-apks/targets/testapp-launcher-debug.apk --vr-target-apk e2e-apks/targets/testapp-vr-debug.apk --results e2e-results
+
+    - name: Add results to the job summary
+      if: always()
+      run: |
+        if [ -f e2e-results/summary.md ]; then
+          cat e2e-results/summary.md >> "$GITHUB_STEP_SUMMARY"
+        fi
+
+    - name: Upload E2E results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: e2e-results-api${{ matrix.api-level }}
+        path: e2e-results
+        if-no-files-found: ignore
