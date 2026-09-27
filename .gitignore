@@ -13,3 +13,6 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# e2e test results (e2e/run.sh, e2e/start-emulator.sh)
+/e2e/results/
