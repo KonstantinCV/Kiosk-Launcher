@@ -333,8 +333,9 @@ provision_real_target() {
 
 check_first_start() {
     local mark result
-    pause_for "== Check 1: first start. The loader's screen is open on the headset. Close it (or go
-   to the home environment), then press Enter here. $TARGET should start within about 15 s." \
+    pause_for "== Check 1: first start. The loader's screen is open on the headset. Don't close it:
+   press the Meta button to go to the home environment, leaving the panel open, then press Enter
+   here. $TARGET should start within about 15 s." \
         "1. First start after provisioning" || return 0
     mark=$(capture_mark)
     result=$(watch_front 60) || true
@@ -432,10 +433,11 @@ check_loader_ui() {
     fg=$(foreground_pkg 2>/dev/null) || fg=""
     stays="foreground after 15 s: ${fg:-none}; $(relaunch_summary "$mark")"
     say "   $stays"
-    pause_for "   Now close the loader's screen and press Enter; $TARGET should come back." || true
+    pause_for "   Now press the Meta button, leaving the loader's panel open, and press Enter;
+   $TARGET should come back." || true
     back=$(watch_front 60) || true
     say "   $TARGET $back"
-    record "6. Loader screen open" "$stays" "after closing it: $TARGET $back"
+    record "6. Loader screen open" "$stays" "after leaving it open: $TARGET $back"
 }
 
 check_restart() {
