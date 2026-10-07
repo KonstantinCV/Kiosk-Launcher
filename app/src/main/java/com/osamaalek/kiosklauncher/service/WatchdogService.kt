@@ -98,12 +98,12 @@ class WatchdogService : Service() {
         val target = config.targetPackage
         val foregroundKnown = Permissions.hasUsageAccess(this)
         if (foregroundKnown) tracker.update()
-        // A Horizon OS dialog (controllers required, Guardian) holds launches up: relaunching would
-        // only bring it back or use up the crash-loop budget, so the target counts as in front
-        // until the dialog closes
+        // A system dialog (controllers required, Guardian, USB debugging) holds launches up:
+        // relaunching would only bring it back, hide it or use up the crash-loop budget, so the
+        // target counts as in front until the dialog closes
         val launchCheck = foregroundKnown && tracker.isLaunchCheckShowing()
         if (launchCheck && !waitingForLaunchCheck) {
-            Log.i(TAG, "A Horizon OS dialog is open (controllers required or Guardian), waiting for it to close")
+            Log.i(TAG, "A system dialog is open (controllers required, Guardian or USB debugging), waiting for it to close")
         }
         waitingForLaunchCheck = launchCheck
 

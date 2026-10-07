@@ -83,6 +83,26 @@ class ForegroundTrackerTest {
     }
 
     @Test
+    fun `sees Android's USB debugging prompt while it is open`() {
+        val systemUi = "com.android.systemui"
+        val prompt = "com.android.systemui.usb.UsbDebuggingActivity"
+        event(ACTIVITY_RESUMED, systemUi, prompt)
+        update()
+        assertTrue(tracker.isLaunchCheckShowing())
+
+        event(ACTIVITY_PAUSED, systemUi, prompt)
+        update()
+        assertFalse(tracker.isLaunchCheckShowing())
+    }
+
+    @Test
+    fun `other System UI activities don't hold launches up`() {
+        event(ACTIVITY_RESUMED, "com.android.systemui", "com.android.systemui.recents.RecentsActivity")
+        update()
+        assertFalse(tracker.isLaunchCheckShowing())
+    }
+
+    @Test
     fun `the home and other shell screens are not a launch check`() {
         event(ACTIVITY_RESUMED, home, "com.oculus.vrshell.HomeActivity")
         event(ACTIVITY_RESUMED, "com.example.other", "com.oculus.vrshell.systemdialog.launchcheck.Fake")

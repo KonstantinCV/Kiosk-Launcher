@@ -40,7 +40,7 @@ class ForegroundTracker(
 
     fun isResumed(packageName: String) = state.isResumed(packageName)
 
-    /** Whether a Horizon OS dialog that holds launches up (controllers required, Guardian) is open. */
+    /** Whether a system dialog that holds launches up (controllers required, Guardian, USB debugging) is open. */
     fun isLaunchCheckShowing() = state.anyResumed(HorizonDialogs::holdsLaunchesUp)
 
     fun update() {

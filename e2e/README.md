@@ -189,6 +189,8 @@ e2e/quest-check.sh --target <your app's package> --loader-apk app-debug.apk \
 
 The APKs are a local build's by default, or the `app-debug` and `e2e-target-apks` artifacts of a CI run as above. `--provision-apk app-release.apk` leaves the signed release build on the headset instead of the debug one, `--skip-suite` runs only the checks, and `s` skips a check. It takes about 30 minutes.
 
+After a restart a Quest may come back with adb `unauthorized` and no prompt in front. The restart checks wait up to 15 minutes for adb and say what to do (the prompt is often under notifications; tick *Always allow from this computer*; replug the cable; as a last resort turn developer mode off and on in the Meta Horizon app). When adb is back they read from the headset's own log how long after boot the watchdog started and first launched the target, so a late reconnect still gives the boot timing, unless logcat has rotated it out by then.
+
 To do the checks by hand instead, provision the headset for its real target after the automated run (the commands above) and keep a log running in a second terminal:
 
 ```sh

@@ -250,13 +250,27 @@ grants_line() {
     echo "grants: SYSTEM_ALERT_WINDOW=$(appops_mode "$LOADER_PKG" SYSTEM_ALERT_WINDOW), GET_USAGE_STATS=$(appops_mode "$LOADER_PKG" GET_USAGE_STATS), battery exemption=$(in_deviceidle_whitelist "$LOADER_PKG" && echo yes || echo no)"
 }
 
+# adb_state: what `adb devices` says about the headset (device, unauthorized, offline), empty if
+# it isn't listed
+adb_state() {
+    "$ADB" devices 2>/dev/null </dev/null | awk -v s="$E2E_SERIAL" '$1 == s { print $2 }'
+}
+
 # wait_boot BOOT_ID TIMEOUT: waits for a new boot to finish; prints how long it took. Without a
-# readable boot id, a boot is the device going offline and coming back.
+# readable boot id, a boot is the device going offline and coming back. Says once (on stderr, as
+# stdout is the result) what to do if the headset is back but adb is no longer authorized.
 wait_boot() {
-    local old=$1 timeout=$2 start=$SECONDS id went_down=no
+    local old=$1 timeout=$2 start=$SECONDS id went_down=no hinted=no
     while ((SECONDS - start <= timeout)); do
         if ! device_online; then
             went_down=yes
+            if [[ $hinted == no && "$(adb_state)" == unauthorized ]]; then
+                hinted=yes
+                say "   adb sees the headset but it is not authorized. In the headset, look for 'Allow USB
+   debugging' in front or under notifications (the bell), tick 'Always allow from this computer'
+   and allow. No prompt: unplug and replug the cable; last resort: turn developer mode off and on
+   in the Meta Horizon app. The script keeps waiting." >&2
+            fi
         elif boot_ready; then
             id=$(boot_id)
             if [[ -n $id && -n $old && $id != "$old" ]] || [[ (-z $id || -z $old) && $went_down == yes ]]; then
@@ -267,6 +281,24 @@ wait_boot() {
         sleep 2
     done
     return 1
+}
+
+# boot_launch_line: from the headset's own log, how long after boot the watchdog started and first
+# launched the target, however late adb came back. Busy headsets rotate logcat, so a late
+# reconnect may find nothing.
+boot_launch_line() {
+    local out
+    out=$(adb_shell "cat /proc/uptime; date +%s; logcat -d -v epoch -s WatchdogService:I" 2>/dev/null) || out=""
+    printf '%s\n' "$out" | awk -v pkg="$TARGET" '
+        NR == 1 { up = $1; next }
+        NR == 2 { boot = $1 - up; next }
+        !w && index($0, "Watchdog started") { w = $1 }
+        !t && index($0, "Relaunching " pkg " (") { t = $1 }
+        END {
+            if (w) printf "watchdog started %.0f s after boot; ", w - boot
+            if (t) printf "first launch of the target %.0f s after boot\n", t - boot
+            else print "no launch of the target found in logcat (it may have rotated out)"
+        }'
 }
 
 # --- Steps ------------------------------------------------------------------------------------
@@ -454,16 +486,17 @@ check_restart() {
         pause_for "== Check $title: restart the headset from its power menu (hold the power button,
    Restart), then press Enter here right away. The script times the start." "$title" || return 0
     fi
-    say "   waiting for the headset to boot (up to 5 minutes)..."
-    if ! took=$(wait_boot "$old" 300); then
-        record "$title" "the headset did not finish booting within 5 minutes"
-        say "   it didn't come back within 5 minutes"
+    say "   waiting for the headset to boot and adb to come back (up to 15 minutes)..."
+    if ! took=$(wait_boot "$old" 900); then
+        say "   adb didn't come back within 15 minutes"
+        record "$title" "adb did not come back within 15 minutes (state: $(adb_state))" \
+            "you: started by itself = $(ask_yn "Did $TARGET start by itself, with no input?")"
         return 0
     fi
     prox_on
     result=$(watch_front 180) || true
-    say "   booted in ${took} s; $TARGET $result (counted from boot completed)"
-    record "$title" "booted in ${took} s; $TARGET $result, counted from boot completed" "$(grants_line)" \
+    say "   adb back ${took} s after the restart; $TARGET $result; $(boot_launch_line)"
+    record "$title" "adb back ${took} s after the restart; $TARGET $result" "$(boot_launch_line)" "$(grants_line)" \
         "$(relaunch_summary "$mark")" \
         "you: started by itself = $(ask_yn "Did $TARGET start by itself, with no input?")"
 }
