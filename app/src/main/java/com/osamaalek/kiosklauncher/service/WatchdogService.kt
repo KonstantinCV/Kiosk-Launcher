@@ -39,6 +39,7 @@ class WatchdogService : Service() {
     private lateinit var powerManager: PowerManager
     private val policy = WatchdogPolicy()
     private var throttled = false
+    private var waitingForLaunchCheck = false
     private var missingTarget: String? = null
     private var lastErrorLogAt: Long? = null
 
@@ -97,6 +98,13 @@ class WatchdogService : Service() {
         val target = config.targetPackage
         val foregroundKnown = Permissions.hasUsageAccess(this)
         if (foregroundKnown) tracker.update()
+        // The target is being started, held up by Horizon OS's launch check: relaunching would only
+        // bring the dialog back, so it counts as in front until the dialog closes
+        val launchCheck = foregroundKnown && tracker.isLaunchCheckShowing()
+        if (launchCheck && !waitingForLaunchCheck) {
+            Log.i(TAG, "Horizon OS launch check is open (e.g. controllers required), waiting for it to close")
+        }
+        waitingForLaunchCheck = launchCheck
 
         val snapshot = WatchdogPolicy.Snapshot(
             now = SystemClock.elapsedRealtime(),
@@ -106,7 +114,7 @@ class WatchdogService : Service() {
             loaderUiVisible = LoaderActivity.isVisible,
             interactive = powerManager.isInteractive,
             foregroundKnown = foregroundKnown,
-            targetResumed = foregroundKnown && tracker.isResumed(target),
+            targetResumed = foregroundKnown && (tracker.isResumed(target) || launchCheck),
             foregroundPackage = if (foregroundKnown) tracker.foregroundPackage else null,
             activityEvents = tracker.activityEvents,
             graceMs = config.graceSeconds * 1000L,

@@ -5,6 +5,7 @@ import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.os.SystemClock
 import com.osamaalek.kiosklauncher.watchdog.ForegroundState
+import com.osamaalek.kiosklauncher.watchdog.HorizonDialogs
 
 /**
  * Reads activity events incrementally to know which activities are resumed. Usage events are
@@ -38,6 +39,9 @@ class ForegroundTracker(
         get() = state.foregroundPackage
 
     fun isResumed(packageName: String) = state.isResumed(packageName)
+
+    /** Whether Horizon OS's launch check (e.g. "controllers required") is open. */
+    fun isLaunchCheckShowing() = state.anyResumed(HorizonDialogs::isLaunchCheck)
 
     fun update() {
         val now = wallClock()

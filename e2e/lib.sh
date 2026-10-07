@@ -19,6 +19,7 @@ TARGET_PKG=com.osamaalek.kiosklauncher.testapp       # "launcher" flavor: MAIN +
 # shellcheck disable=SC2034 # used by run.sh
 VR_TARGET_PKG=com.osamaalek.kiosklauncher.testapp.vr # "vr" flavor: MAIN + com.oculus.intent.category.VR only
 TARGET_RECEIVER=com.osamaalek.kiosklauncher.testapp.CommandReceiver
+TARGET_ACTIVITY=com.osamaalek.kiosklauncher.testapp.TargetActivity
 TARGET_ACTION=com.osamaalek.kiosklauncher.testapp.action
 TARGET_TAG=E2ETarget
 RUNNER_TAG=E2ERunner
@@ -767,6 +768,14 @@ target_cmd() {
         -n "$pkg/$TARGET_RECEIVER" -a "$TARGET_ACTION.$action" 2>&1) || true
     detail "      $(one_line "$TARGET_CMD_OUT")"
     [[ $TARGET_CMD_OUT == *"Broadcast completed"* ]]
+}
+
+# bring_target_front: starts the launcher test app's activity, as tapping its panel would. On
+# Horizon OS a 2D app stays resumed as a panel beside the home after HOME, so the watchdog rightly
+# leaves it alone, but it is no longer in front; scenarios that need it in front bring it back.
+bring_target_front() {
+    adb_shell am start -n "$TARGET_PKG/$TARGET_ACTIVITY" >/dev/null 2>&1 || true
+    wait_until 10 is_foreground "$TARGET_PKG"
 }
 
 open_loader_ui() {

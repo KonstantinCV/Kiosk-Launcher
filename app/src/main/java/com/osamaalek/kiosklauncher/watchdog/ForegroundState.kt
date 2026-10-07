@@ -17,6 +17,9 @@ class ForegroundState {
     /** Whether any activity of [packageName] is resumed. */
     fun isResumed(packageName: String) = resumed.any { it.first == packageName }
 
+    /** Whether any resumed activity matches [predicate] (package, class). */
+    fun anyResumed(predicate: (String, String) -> Boolean) = resumed.any { predicate(it.first, it.second) }
+
     fun onResumed(packageName: String, className: String) {
         val activity = packageName to className
         // Re-adding moves it to the end

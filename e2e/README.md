@@ -57,7 +57,7 @@ The watchdog's crash-loop guard allows 5 launches in 3 minutes, then one a minut
 | 5 | `relaunch-after-exit` | A normal exit (the app finishes its task) is detected: `Relaunching` is logged and the target comes back. |
 | 6 | `relaunch-after-crash` | A crash is detected: the test app throws on its main thread, its process dies, and the target comes back in a new process (new pid). |
 | 7 | `relaunch-after-force-stop` | The target comes back after `am force-stop`, as when the system or a user kills it. |
-| 8 | `relaunch-after-home` | The target comes back after the user presses home (the Meta button on a Quest) while it is in front. |
+| 8 | `relaunch-after-home` | The target comes back after the user presses home (the Meta button on a Quest) while it is in front. On a Quest, HOME leaves a 2D app such as the test app resumed as a panel beside the home: it never leaves, so the scenario instead checks that the watchdog leaves it alone for 12 s, notes it, and brings it to front. An immersive app (a Headjack app) is paused by HOME and comes back. |
 | 9 | `grace-period` | The grace period is honoured: with it set to 12 s, and after the 3 s wait above, an exited target is still gone 6 s later and is relaunched 11.5 to 18 s after the exit (usually 12 to 14 s, 16 s if a check just missed the exit). The grace period is then set back to 3 s. |
 | 10 | `pause-resume` | `PAUSE --ei minutes 1` stops relaunches (an exited target stays gone for 12 s) and `RESUME` brings them back. |
 | 11 | `disable-enable` | `DISABLE` stops relaunches (12 s) and `ENABLE` brings them back. |

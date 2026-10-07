@@ -32,8 +32,19 @@ class WatchdogLoopTest {
         )
         val policy = WatchdogPolicy()
 
-        fun record(type: Int, packageName: String, at: Long = wall) {
-            events += ForegroundTracker.Event(at, type, packageName, "Main")
+        /** Horizon OS holds launches up with its "controllers required" dialog. */
+        var controllersAsleep = false
+
+        fun record(type: Int, packageName: String, at: Long = wall, className: String = "Main") {
+            events += ForegroundTracker.Event(at, type, packageName, className)
+        }
+
+        fun showLaunchCheck() = record(ACTIVITY_RESUMED, home, className = LAUNCH_CHECK)
+
+        /** The dialog closes: a controller was picked up (the target starts) or it was cancelled. */
+        fun closeLaunchCheck(targetStarts: Boolean) {
+            record(ACTIVITY_PAUSED, home, className = LAUNCH_CHECK)
+            if (targetStarts) resume(target) else resume(home)
         }
 
         fun resume(packageName: String) {
@@ -66,7 +77,8 @@ class WatchdogLoopTest {
                     loaderUiVisible = false,
                     interactive = true,
                     foregroundKnown = true,
-                    targetResumed = tracker.isResumed(target),
+                    // As WatchdogService does
+                    targetResumed = tracker.isResumed(target) || tracker.isLaunchCheckShowing(),
                     foregroundPackage = tracker.foregroundPackage,
                     activityEvents = tracker.activityEvents,
                     graceMs = 10_000,
@@ -76,11 +88,39 @@ class WatchdogLoopTest {
                 policy.onLaunched(s)
                 launches += elapsed
                 // A launch of an app that is already in front changes nothing, so records nothing
-                if (top != target) resume(target)
+                if (controllersAsleep) showLaunchCheck() else if (top != target) resume(target)
                 onLaunch()
             }
             return launches
         }
+    }
+
+    @Test
+    fun `a launch held up by the controllers-required dialog is not repeated while it is open`() {
+        val loop = Loop()
+        loop.resume(home)
+        loop.controllersAsleep = true
+
+        // One launch, which brings up the dialog; then nothing for two minutes while it stays open
+        assertEquals(1, loop.run(2 * MINUTE).size)
+
+        // A controller is picked up: the target starts, and is left alone
+        loop.controllersAsleep = false
+        loop.closeLaunchCheck(targetStarts = true)
+        assertEquals(emptyList<Long>(), loop.run(MINUTE))
+    }
+
+    @Test
+    fun `a cancelled controllers-required dialog gets the target launched again after the grace period`() {
+        val loop = Loop()
+        loop.resume(home)
+        loop.controllersAsleep = true
+        assertEquals(1, loop.run(20_000).size)
+
+        loop.controllersAsleep = false
+        loop.closeLaunchCheck(targetStarts = false)
+        val launches = loop.run(30_000)
+        assertEquals(1, launches.size)
     }
 
     @Test
@@ -143,6 +183,7 @@ class WatchdogLoopTest {
 
     private companion object {
         const val MINUTE = 60_000L
+        const val LAUNCH_CHECK = "com.oculus.vrshell.systemdialog.launchcheck.LaunchCheckControllerRequiredDialogActivity"
         const val HOUR = 60 * MINUTE
     }
 }

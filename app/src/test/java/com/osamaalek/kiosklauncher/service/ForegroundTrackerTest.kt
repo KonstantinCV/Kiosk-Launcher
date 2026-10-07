@@ -42,6 +42,35 @@ class ForegroundTrackerTest {
     }
 
     @Test
+    fun `sees Horizon OS's controllers-required launch check while it is open`() {
+        val dialog = "com.oculus.vrshell.systemdialog.launchcheck.LaunchCheckControllerRequiredDialogActivity"
+        event(ACTIVITY_RESUMED, home, "Home")
+        update()
+        assertFalse(tracker.isLaunchCheckShowing())
+
+        // The launch is held up: the dialog resumes instead of the target
+        event(ACTIVITY_RESUMED, home, dialog)
+        update()
+        assertTrue(tracker.isLaunchCheckShowing())
+        assertFalse(tracker.isResumed(target))
+
+        // A controller is picked up: the dialog goes and the target comes up
+        event(ACTIVITY_PAUSED, home, dialog)
+        event(ACTIVITY_RESUMED, target)
+        update()
+        assertFalse(tracker.isLaunchCheckShowing())
+        assertTrue(tracker.isResumed(target))
+    }
+
+    @Test
+    fun `the home and other shell screens are not a launch check`() {
+        event(ACTIVITY_RESUMED, home, "com.oculus.vrshell.HomeActivity")
+        event(ACTIVITY_RESUMED, "com.example.other", "com.oculus.vrshell.systemdialog.launchcheck.Fake")
+        update()
+        assertFalse(tracker.isLaunchCheckShowing())
+    }
+
+    @Test
     fun `a normal exit to home`() {
         event(ACTIVITY_RESUMED, target)
         update()

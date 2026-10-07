@@ -663,6 +663,8 @@ restore_sane_state() {
     fi
     if is_foreground "$LOADER_PKG"; then press_key KEYCODE_HOME; fi
     if ! wait_until 30 is_foreground "$TARGET_PKG"; then
+        # A 2D app left resumed beside the Horizon OS home isn't relaunched; bring it to front
+        if has_pid "$TARGET_PKG" && bring_target_front; then return 0; fi
         step "the target is still not in front after restoring"
     fi
 }
@@ -725,6 +727,12 @@ require_target_foreground() {
     if ! is_awake; then wake_device; fi
     fg=$(foreground_pkg)
     if [[ $fg == "$TARGET_PKG" ]] && wait_until 10 has_pid "$TARGET_PKG"; then return 0; fi
+    if [[ $fg != "$LOADER_PKG" ]] && has_pid "$TARGET_PKG"; then
+        # Running but not in front: on Horizon OS a 2D app stays resumed as a panel beside the
+        # home, and the watchdog rightly leaves it alone
+        step "the target is running but not in front (foreground: ${fg:-none}), bringing it to front"
+        if bring_target_front; then return 0; fi
+    fi
     step "the target is not in front (foreground: ${fg:-none}), waiting for the watchdog"
     if [[ $fg == "$LOADER_PKG" ]]; then press_key KEYCODE_HOME; fi
     if wait_until 60 in_front_and_running "$TARGET_PKG"; then return 0; fi
@@ -1148,6 +1156,15 @@ scenario_relaunch_after_home() {
     press_key KEYCODE_HOME
     expect_within 15 "the target did not leave the foreground after HOME" \
         target_left_since "$since" "$TARGET_PKG" || return 1
+    if ! wait_until 5 log_has "$since" "$TARGET_TAG" "$(target_event_re PAUSED "$TARGET_PKG")" &&
+        has_pid "$TARGET_PKG"; then
+        # Horizon OS keeps a 2D app resumed as a panel beside the home: it never left, so there is
+        # nothing to relaunch. The watchdog must leave it alone, as it does any target in front.
+        expect_stays_away "$since" "$STAND_DOWN_S" "while it stayed resumed as a panel beside the home" || return 1
+        note "the target stayed resumed as a panel beside the home (Horizon OS), so nothing was relaunched"
+        bring_target_front || true
+        return 0
+    fi
     expect_relaunch "$since" "$TARGET_PKG" "$BACK_TIMEOUT" || return 1
 }
 
@@ -1667,6 +1684,9 @@ crash_loop_steps() {
         fail "$NO_CLOCK"
         return 1
     }
+    # Stopped first: on Horizon OS a 2D app left running would stay resumed beside the home, and
+    # HOME would get nothing launched
+    force_stop "$TARGET_PKG"
     step "pressing HOME: launch 1"
     press_key KEYCODE_HOME
     E2E_FAIL_PREFIX="launch 1: "
