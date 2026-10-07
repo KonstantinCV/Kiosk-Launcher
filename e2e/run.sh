@@ -42,7 +42,7 @@ BACK_TIMEOUT=${E2E_BACK_TIMEOUT:-30} # the target comes back after an exit (grac
 FAST_GRACE=3                         # grace period used by the scenarios, for speed
 STAND_DOWN_S=12                      # how long "nothing happens" is watched
 SCREEN_OFF_GRACE=6                   # see scenario_screen_off
-GUARDIAN_WAIT_S=180                  # for a person to confirm a Quest's Guardian dialog
+GUARDIAN_WAIT_S=180                  # for a Quest's Guardian to go away
 LONG_GRACE=12                        # see scenario_grace_period
 LONG_GRACE_MAX=18                    # its relaunch: 12 s from the first tick after the exit, + slack
 TICK_SETTLE_S=3                      # > one watchdog tick (2 s), see settle_target_front
@@ -641,7 +641,7 @@ restore_sane_state() {
     fi
     step "restoring the usual state"
     wake_device
-    wait_guardian_closed "$GUARDIAN_WAIT_S" || step "the Guardian dialog is still open"
+    wait_guardian_closed "$GUARDIAN_WAIT_S" || step "Guardian is still in front"
     if ! package_installed "$LOADER_PKG"; then
         adb_ install -r -g "$LOADER_APK" >>"$RUN_LOG" 2>&1 || true
         adb_shell dumpsys deviceidle whitelist "+$LOADER_PKG" >/dev/null 2>&1 || true
@@ -728,7 +728,7 @@ require_target_foreground() {
     local fg
     if ! is_awake; then wake_device; fi
     if ! wait_guardian_closed "$GUARDIAN_WAIT_S"; then
-        fail "precondition: Horizon OS's Guardian dialog is open: confirm the boundary in the headset"
+        fail "precondition: Horizon OS's Guardian is still in front after ${GUARDIAN_WAIT_S} s"
         return 1
     fi
     fg=$(foreground_pkg)
@@ -1296,14 +1296,15 @@ scenario_screen_off() {
     step "waking the device"
     wake_device
     expect_within 10 "the display did not wake up" is_awake || return 1
-    # A Quest may show its Guardian dialog on wake; the watchdog must wait for it, not use up its
-    # launch budget on launches the dialog holds up
+    # On a Quest, Guardian may come up on wake and hold launches up until it goes. The watchdog
+    # keeps launching meanwhile, but those launches must not use up its crash-loop budget: once
+    # Guardian is gone the target comes back, not throttled
     if wait_until 5 guardian_in_front; then
         if ! wait_guardian_closed "$GUARDIAN_WAIT_S"; then
-            fail "Horizon OS's Guardian dialog stayed open for ${GUARDIAN_WAIT_S} s after wake: confirm the boundary in the headset"
+            fail "Horizon OS's Guardian was still in front ${GUARDIAN_WAIT_S} s after wake"
             return 1
         fi
-        note "Guardian dialog after wake, closed $(ts_diff "$(device_epoch)" "$wake_since") s after wake"
+        note "Guardian in front after wake, gone $(ts_diff "$(device_epoch)" "$wake_since") s after wake"
     fi
     expect_relaunch "$wake_since" "$TARGET_PKG" $((SCREEN_OFF_GRACE + BACK_TIMEOUT)) "back after wake" || return 1
     admin_cmd SET_GRACE --ei seconds "$FAST_GRACE" || return 1

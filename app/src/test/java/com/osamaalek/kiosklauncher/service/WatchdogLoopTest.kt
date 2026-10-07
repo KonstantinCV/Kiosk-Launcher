@@ -3,6 +3,7 @@ package com.osamaalek.kiosklauncher.service
 import android.app.usage.UsageEvents.Event.ACTIVITY_PAUSED
 import android.app.usage.UsageEvents.Event.ACTIVITY_RESUMED
 import android.app.usage.UsageEvents.Event.ACTIVITY_STOPPED
+import com.osamaalek.kiosklauncher.watchdog.DialogWait
 import com.osamaalek.kiosklauncher.watchdog.WatchdogPolicy
 import com.osamaalek.kiosklauncher.watchdog.WatchdogPolicy.Decision
 import org.junit.Assert.assertEquals
@@ -31,9 +32,13 @@ class WatchdogLoopTest {
             sinceBoot = { elapsed },
         )
         val policy = WatchdogPolicy()
+        val dialogWait = DialogWait()
 
         /** Horizon OS holds launches up with its "controllers required" dialog. */
         var controllersAsleep = false
+
+        /** Guardian is in front: no launch gets through, and none brings up anything. */
+        var guardianUp = false
 
         fun record(type: Int, packageName: String, at: Long = wall, className: String = "Main") {
             events += ForegroundTracker.Event(at, type, packageName, className)
@@ -45,6 +50,17 @@ class WatchdogLoopTest {
         fun closeLaunchCheck(targetStarts: Boolean) {
             record(ACTIVITY_PAUSED, home, className = LAUNCH_CHECK)
             if (targetStarts) resume(target) else resume(home)
+        }
+
+        fun showGuardian() {
+            record(ACTIVITY_RESUMED, GUARDIAN, className = GUARDIAN_DIALOG)
+            guardianUp = true
+        }
+
+        /** Guardian goes away by itself; as seen on a Quest, sometimes without a pause or stop. */
+        fun hideGuardian(recorded: Boolean) {
+            if (recorded) record(ACTIVITY_STOPPED, GUARDIAN, className = GUARDIAN_DIALOG)
+            guardianUp = false
         }
 
         fun resume(packageName: String) {
@@ -78,17 +94,22 @@ class WatchdogLoopTest {
                     interactive = true,
                     foregroundKnown = true,
                     // As WatchdogService does
-                    targetResumed = tracker.isResumed(target) || tracker.isLaunchCheckShowing(),
+                    targetResumed = tracker.isResumed(target) || dialogWait.holding(elapsed, tracker.isDialogInFront()),
                     foregroundPackage = tracker.foregroundPackage,
                     activityEvents = tracker.activityEvents,
                     graceMs = 10_000,
                     blindIntervalMs = 30_000,
+                    launchesHeldUp = tracker.isGuardianInFront(),
                 )
                 if (policy.evaluate(s) != Decision.LAUNCH) continue
                 policy.onLaunched(s)
                 launches += elapsed
                 // A launch of an app that is already in front changes nothing, so records nothing
-                if (controllersAsleep) showLaunchCheck() else if (top != target) resume(target)
+                when {
+                    guardianUp -> {}
+                    controllersAsleep -> showLaunchCheck()
+                    top != target -> resume(target)
+                }
                 onLaunch()
             }
             return launches
@@ -96,18 +117,50 @@ class WatchdogLoopTest {
     }
 
     @Test
-    fun `a launch held up by the controllers-required dialog is not repeated while it is open`() {
+    fun `a launch held up by the controllers-required dialog is not repeated for a minute while it is open`() {
         val loop = Loop()
         loop.resume(home)
         loop.controllersAsleep = true
 
-        // One launch, which brings up the dialog; then nothing for two minutes while it stays open
-        assertEquals(1, loop.run(2 * MINUTE).size)
+        // One launch, which brings up the dialog; then nothing while it stays open
+        assertEquals(1, loop.run(50_000).size)
 
         // A controller is picked up: the target starts, and is left alone
         loop.controllersAsleep = false
         loop.closeLaunchCheck(targetStarts = true)
         assertEquals(emptyList<Long>(), loop.run(MINUTE))
+    }
+
+    @Test
+    fun `a controllers-required dialog left open stops holding the watchdog back after a minute`() {
+        val loop = Loop()
+        loop.resume(home)
+        loop.controllersAsleep = true
+        val start = loop.elapsed
+        val launches = loop.run(5 * MINUTE).map { it - start }
+
+        // Launch 1 at 12 s brings up the dialog, seen at 14 s; the wait ends a minute later, at
+        // 74 s. Then a launch every grace period under the crash-loop guard: 5 in 3 minutes, then
+        // one a minute, and more once the first ones are 3 minutes old
+        assertEquals(
+            listOf(12_000L, 84_000L, 94_000L, 104_000L, 114_000L, 174_000L, 234_000L, 276_000L, 286_000L, 296_000L),
+            launches,
+        )
+    }
+
+    @Test
+    fun `a dialog whose closing was never recorded does not keep the target from coming back`() {
+        val loop = Loop()
+        loop.resume(home)
+        loop.controllersAsleep = true
+        assertEquals(1, loop.run(20_000).size)
+
+        // The dialog goes without a pause; the home resumes
+        loop.controllersAsleep = false
+        loop.record(ACTIVITY_RESUMED, home)
+        val launches = loop.run(30_000)
+        assertEquals(1, launches.size)
+        assertEquals(target, loop.top)
     }
 
     @Test
@@ -121,6 +174,30 @@ class WatchdogLoopTest {
         loop.closeLaunchCheck(targetStarts = false)
         val launches = loop.run(30_000)
         assertEquals(1, launches.size)
+    }
+
+    @Test
+    fun `launches Guardian holds up are retried and don't use up the crash-loop guard`() {
+        for (recorded in listOf(true, false)) {
+            val loop = Loop()
+            loop.resume(home)
+            loop.showGuardian()
+
+            // A launch every grace period for three minutes, from 12 s on: none gets through, none
+            // is throttled
+            assertEquals(17, loop.run(3 * MINUTE).size)
+
+            // Guardian goes away: the next launch brings the target up, within a grace period
+            loop.hideGuardian(recorded)
+            assertEquals(1, loop.run(14_000).size)
+            assertEquals(target, loop.top)
+
+            // And a crash right after is answered as usual
+            loop.crash()
+            loop.resume(home)
+            assertEquals(1, loop.run(14_000).size)
+            assertEquals(target, loop.top)
+        }
     }
 
     @Test
@@ -184,6 +261,8 @@ class WatchdogLoopTest {
     private companion object {
         const val MINUTE = 60_000L
         const val LAUNCH_CHECK = "com.oculus.vrshell.systemdialog.launchcheck.LaunchCheckControllerRequiredDialogActivity"
+        const val GUARDIAN = "com.oculus.guardian"
+        const val GUARDIAN_DIALOG = "com.oculus.vrguardianservice.guardiandialog.GuardianDialogActivity"
         const val HOUR = 60 * MINUTE
     }
 }

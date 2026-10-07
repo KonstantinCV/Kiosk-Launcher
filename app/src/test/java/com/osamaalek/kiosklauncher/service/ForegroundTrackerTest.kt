@@ -42,72 +42,83 @@ class ForegroundTrackerTest {
     }
 
     @Test
-    fun `sees Horizon OS's controllers-required launch check while it is open`() {
-        val dialog = "com.oculus.vrshell.systemdialog.launchcheck.LaunchCheckControllerRequiredDialogActivity"
+    fun `sees Horizon OS's controllers-required launch check while it is in front`() {
         event(ACTIVITY_RESUMED, home, "Home")
         update()
-        assertFalse(tracker.isLaunchCheckShowing())
+        assertFalse(tracker.isDialogInFront())
 
         // The launch is held up: the dialog resumes instead of the target
-        event(ACTIVITY_RESUMED, home, dialog)
+        event(ACTIVITY_RESUMED, home, LAUNCH_CHECK)
         update()
-        assertTrue(tracker.isLaunchCheckShowing())
+        assertTrue(tracker.isDialogInFront())
         assertFalse(tracker.isResumed(target))
 
         // A controller is picked up: the dialog goes and the target comes up
-        event(ACTIVITY_PAUSED, home, dialog)
+        event(ACTIVITY_PAUSED, home, LAUNCH_CHECK)
         event(ACTIVITY_RESUMED, target)
         update()
-        assertFalse(tracker.isLaunchCheckShowing())
+        assertFalse(tracker.isDialogInFront())
         assertTrue(tracker.isResumed(target))
     }
 
     @Test
-    fun `sees the Guardian dialog while it is open`() {
-        val guardian = "com.oculus.guardian"
-        val dialog = "com.oculus.vrguardianservice.guardiandialog.GuardianDialogActivity"
-        event(ACTIVITY_RESUMED, guardian, dialog)
+    fun `a dialog whose closing was never recorded is not in front once something else resumes`() {
+        event(ACTIVITY_RESUMED, home, LAUNCH_CHECK)
         update()
-        assertTrue(tracker.isLaunchCheckShowing())
+        assertTrue(tracker.isDialogInFront())
 
-        event(ACTIVITY_STOPPED, guardian, dialog)
+        event(ACTIVITY_RESUMED, home, "Home")
         update()
-        assertFalse(tracker.isLaunchCheckShowing())
+        assertFalse(tracker.isDialogInFront())
     }
 
     @Test
-    fun `other Guardian activities don't hold launches up`() {
-        event(ACTIVITY_RESUMED, "com.oculus.guardian", "com.oculus.vrguardianservice.SomethingElse")
-        update()
-        assertFalse(tracker.isLaunchCheckShowing())
-    }
-
-    @Test
-    fun `sees Android's USB debugging prompt while it is open`() {
+    fun `sees Android's USB debugging prompt while it is in front`() {
         val systemUi = "com.android.systemui"
         val prompt = "com.android.systemui.usb.UsbDebuggingActivity"
         event(ACTIVITY_RESUMED, systemUi, prompt)
         update()
-        assertTrue(tracker.isLaunchCheckShowing())
+        assertTrue(tracker.isDialogInFront())
 
         event(ACTIVITY_PAUSED, systemUi, prompt)
         update()
-        assertFalse(tracker.isLaunchCheckShowing())
+        assertFalse(tracker.isDialogInFront())
     }
 
     @Test
-    fun `other System UI activities don't hold launches up`() {
+    fun `other System UI activities are not a dialog to wait for`() {
         event(ACTIVITY_RESUMED, "com.android.systemui", "com.android.systemui.recents.RecentsActivity")
         update()
-        assertFalse(tracker.isLaunchCheckShowing())
+        assertFalse(tracker.isDialogInFront())
+    }
+
+    @Test
+    fun `sees Guardian in front, which is not a dialog to wait for`() {
+        event(ACTIVITY_RESUMED, GUARDIAN, GUARDIAN_DIALOG)
+        update()
+        assertTrue(tracker.isGuardianInFront())
+        assertFalse(tracker.isDialogInFront())
+
+        event(ACTIVITY_STOPPED, GUARDIAN, GUARDIAN_DIALOG)
+        update()
+        assertFalse(tracker.isGuardianInFront())
+    }
+
+    @Test
+    fun `other Guardian activities are not Guardian's dialog`() {
+        event(ACTIVITY_RESUMED, GUARDIAN, "com.oculus.vrguardianservice.SomethingElse")
+        update()
+        assertFalse(tracker.isGuardianInFront())
     }
 
     @Test
     fun `the home and other shell screens are not a launch check`() {
         event(ACTIVITY_RESUMED, home, "com.oculus.vrshell.HomeActivity")
+        update()
+        assertFalse(tracker.isDialogInFront())
         event(ACTIVITY_RESUMED, "com.example.other", "com.oculus.vrshell.systemdialog.launchcheck.Fake")
         update()
-        assertFalse(tracker.isLaunchCheckShowing())
+        assertFalse(tracker.isDialogInFront())
     }
 
     @Test
@@ -271,5 +282,8 @@ class ForegroundTrackerTest {
 
     private companion object {
         const val HOUR = 60 * 60_000L
+        const val LAUNCH_CHECK = "com.oculus.vrshell.systemdialog.launchcheck.LaunchCheckControllerRequiredDialogActivity"
+        const val GUARDIAN = "com.oculus.guardian"
+        const val GUARDIAN_DIALOG = "com.oculus.vrguardianservice.guardiandialog.GuardianDialogActivity"
     }
 }

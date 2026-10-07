@@ -332,8 +332,8 @@ run_suite() {
     say ""
     say "== Part A: the automated suite on the headset (about 8 minutes). Keep it on your head,"
     say "   or the proximity sensor covered, unless you chose to keep the display on."
-    say "   When the screen-off scenario wakes it, Horizon OS may show its Guardian (boundary)"
-    say "   dialog: confirm it in the headset. The suite waits up to 3 minutes for that."
+    say "   When the screen-off scenario wakes it, Horizon OS's Guardian may hold launches up for a"
+    say "   while; the suite waits up to 3 minutes. If the headset shows a boundary prompt, confirm it."
     if bash "$E2E_DIR/run.sh" --allow-real-device --skip reboot --serial "$E2E_SERIAL" \
         --loader-apk "$LOADER_APK" --target-apk "$TEST_APK" --vr-target-apk "$VR_TEST_APK" \
         --results "$OUT/suite" </dev/null; then

@@ -24,6 +24,7 @@ import com.osamaalek.kiosklauncher.ui.MainActivity
 import com.osamaalek.kiosklauncher.util.LoaderConfig
 import com.osamaalek.kiosklauncher.util.Permissions
 import com.osamaalek.kiosklauncher.util.TargetLauncher
+import com.osamaalek.kiosklauncher.watchdog.DialogWait
 import com.osamaalek.kiosklauncher.watchdog.WatchdogPolicy
 import com.osamaalek.kiosklauncher.watchdog.WatchdogPolicy.Decision
 
@@ -39,7 +40,8 @@ class WatchdogService : Service() {
     private lateinit var powerManager: PowerManager
     private val policy = WatchdogPolicy()
     private var throttled = false
-    private var waitingForLaunchCheck = false
+    private val dialogWait = DialogWait()
+    private var waitingForDialog = false
     private var missingTarget: String? = null
     private var lastErrorLogAt: Long? = null
 
@@ -96,30 +98,35 @@ class WatchdogService : Service() {
 
     private fun evaluate() {
         val target = config.targetPackage
+        val now = SystemClock.elapsedRealtime()
         val foregroundKnown = Permissions.hasUsageAccess(this)
         if (foregroundKnown) tracker.update()
-        // A system dialog (controllers required, Guardian, USB debugging) holds launches up:
-        // relaunching would only bring it back, hide it or use up the crash-loop budget, so the
-        // target counts as in front until the dialog closes
-        val launchCheck = foregroundKnown && tracker.isLaunchCheckShowing()
-        if (launchCheck && !waitingForLaunchCheck) {
-            Log.i(TAG, "A system dialog is open (controllers required, Guardian or USB debugging), waiting for it to close")
+        // A dialog in front (controllers required, USB debugging) holds launches up: relaunching
+        // would only bring it back or hide it, so the target counts as in front while it is, for
+        // at most a minute
+        val dialogInFront = foregroundKnown && tracker.isDialogInFront()
+        val waiting = dialogWait.holding(now, dialogInFront)
+        if (waiting && !waitingForDialog) {
+            Log.i(TAG, "A dialog is open (controllers required or USB debugging), waiting up to a minute for it to close")
+        } else if (dialogInFront && !waiting && waitingForDialog) {
+            Log.i(TAG, "The dialog is still open after a minute, launching again")
         }
-        waitingForLaunchCheck = launchCheck
+        waitingForDialog = waiting
 
         val snapshot = WatchdogPolicy.Snapshot(
-            now = SystemClock.elapsedRealtime(),
+            now = now,
             targetPackage = target,
             enabled = config.enabled,
             paused = config.isPaused(),
             loaderUiVisible = LoaderActivity.isVisible,
             interactive = powerManager.isInteractive,
             foregroundKnown = foregroundKnown,
-            targetResumed = foregroundKnown && (tracker.isResumed(target) || launchCheck),
+            targetResumed = foregroundKnown && (tracker.isResumed(target) || waiting),
             foregroundPackage = if (foregroundKnown) tracker.foregroundPackage else null,
             activityEvents = tracker.activityEvents,
             graceMs = config.graceSeconds * 1000L,
             blindIntervalMs = BLIND_INTERVAL_MS,
+            launchesHeldUp = foregroundKnown && tracker.isGuardianInFront(),
         )
         val decision = policy.evaluate(snapshot)
         if (decision == Decision.THROTTLED && !throttled) Log.w(TAG, "$target keeps exiting, relaunch throttled")

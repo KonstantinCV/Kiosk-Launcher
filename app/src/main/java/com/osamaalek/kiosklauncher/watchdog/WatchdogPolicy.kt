@@ -32,6 +32,11 @@ class WatchdogPolicy(private val backoff: LaunchBackoff = LaunchBackoff()) {
         val graceMs: Long,
         /** Used without usage access: how often to bring the target back to the front. */
         val blindIntervalMs: Long,
+        /**
+         * Something in front holds every launch up (Guardian): a launch now is retried as usual,
+         * but isn't a crash, so the backoff doesn't count it.
+         */
+        val launchesHeldUp: Boolean = false,
     )
 
     private class Launch(
@@ -75,7 +80,7 @@ class WatchdogPolicy(private val backoff: LaunchBackoff = LaunchBackoff()) {
     fun onLaunched(s: Snapshot) {
         // Give the launch its own grace period before trying again
         notTargetSince = s.now
-        if (s.foregroundKnown) backoff.onLaunched(s.now)
+        if (s.foregroundKnown && !s.launchesHeldUp) backoff.onLaunched(s.now)
         val intoUnknown = s.foregroundKnown && s.foregroundPackage == null
         lastLaunch = Launch(s.now, s.targetPackage, intoUnknown, s.activityEvents)
     }

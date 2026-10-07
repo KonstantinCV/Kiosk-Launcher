@@ -40,8 +40,15 @@ class ForegroundTracker(
 
     fun isResumed(packageName: String) = state.isResumed(packageName)
 
-    /** Whether a system dialog that holds launches up (controllers required, Guardian, USB debugging) is open. */
-    fun isLaunchCheckShowing() = state.anyResumed(HorizonDialogs::holdsLaunchesUp)
+    /**
+     * Whether a dialog to wait for (controllers required, USB debugging) is in front. In front, not
+     * just resumed: one whose closing was never recorded stays resumed, but not in front, once
+     * anything else resumes.
+     */
+    fun isDialogInFront() = state.inFront(HorizonDialogs::isDialogToWaitFor)
+
+    /** Whether Guardian's activity is in front, which holds every launch up. */
+    fun isGuardianInFront() = state.inFront(HorizonDialogs::isGuardianDialog)
 
     fun update() {
         val now = wallClock()

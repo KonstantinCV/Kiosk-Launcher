@@ -604,12 +604,13 @@ guardian_closed() {
     ! guardian_in_front
 }
 
-# wait_guardian_closed TIMEOUT_S: on a Quest, Horizon OS shows its Guardian (boundary) dialog when
-# the headset wakes without tracking, and holds every launch up until a person in the headset
-# confirms it. Waits for that; returns 1 if it is still open after TIMEOUT_S. No-op elsewhere.
+# wait_guardian_closed TIMEOUT_S: on a Quest, Guardian's activity comes up around a wake, often with
+# nothing shown, and no launch gets through while it is in front; it goes away by itself (or once
+# the boundary is confirmed, when it does show one). Waits for that; returns 1 if it is still in
+# front after TIMEOUT_S. No-op elsewhere.
 wait_guardian_closed() {
     guardian_in_front || return 0
-    step "Horizon OS shows its Guardian dialog; confirm the boundary in the headset (waiting up to $1 s)"
+    step "Horizon OS's Guardian is in front, which holds launches up; waiting up to $1 s for it to go (confirm the boundary if the headset shows one)"
     wait_until "$1" guardian_closed
 }
 
