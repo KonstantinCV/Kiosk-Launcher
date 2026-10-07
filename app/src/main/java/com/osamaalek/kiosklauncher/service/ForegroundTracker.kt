@@ -40,8 +40,8 @@ class ForegroundTracker(
 
     fun isResumed(packageName: String) = state.isResumed(packageName)
 
-    /** Whether Horizon OS's launch check (e.g. "controllers required") is open. */
-    fun isLaunchCheckShowing() = state.anyResumed(HorizonDialogs::isLaunchCheck)
+    /** Whether a Horizon OS dialog that holds launches up (controllers required, Guardian) is open. */
+    fun isLaunchCheckShowing() = state.anyResumed(HorizonDialogs::holdsLaunchesUp)
 
     fun update() {
         val now = wallClock()
