@@ -1,6 +1,9 @@
 <resources>
     <string name="app_name">Kiosk Launcher</string>
     <string name="picker_title">Choose the app to keep running</string>
+    <string name="picker_hint">The loader starts this app after boot and brings it back whenever it exits or crashes. Sideloaded apps (Unknown Sources) are listed too.</string>
+    <string name="picker_empty">No launchable apps found.</string>
+    <string name="picker_current">Current</string>
 
     <string name="section_target">App to keep running</string>
     <string name="section_watchdog">Watchdog</string>

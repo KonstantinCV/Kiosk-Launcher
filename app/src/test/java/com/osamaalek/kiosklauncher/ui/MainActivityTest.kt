@@ -9,18 +9,24 @@ import android.widget.TextView
 import androidx.appcompat.widget.SwitchCompat
 import com.osamaalek.kiosklauncher.R
 import com.osamaalek.kiosklauncher.util.LoaderConfig
+import com.osamaalek.kiosklauncher.util.TestApps
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.android.controller.ActivityController
 
-/** The settings screen writes a setting only when the user changes it, over the whole allowed range. */
+/**
+ * The settings screen writes a setting only when the user changes it, over the whole allowed range,
+ * and opens the app list by itself while no installed app is set.
+ */
 @RunWith(RobolectricTestRunner::class)
 class MainActivityTest {
 
@@ -125,5 +131,44 @@ class MainActivityTest {
         assertTrue("slider at $shown, expected a step below 120", shown in 61 until 120)
         assertEquals(shown, config.graceSeconds)
         assertEquals(context.getString(R.string.grace_label, shown), graceText.text.toString())
+    }
+
+    /** The activity the screen started last, if any, and forgets it. */
+    private fun startedActivity(): String? =
+        shadowOf(controller.get()).nextStartedActivity?.component?.className
+
+    @Test
+    fun `opens the app list on first launch`() {
+        open()
+
+        assertEquals(AppPickerActivity::class.java.name, startedActivity())
+    }
+
+    @Test
+    fun `opens the app list when the target is no longer installed`() {
+        config.targetPackage = "com.example.uninstalled"
+        open()
+
+        assertEquals(AppPickerActivity::class.java.name, startedActivity())
+    }
+
+    @Test
+    fun `stays on the settings screen when an installed app is set`() {
+        TestApps.installLauncherApp(context, "com.example.headjacklive")
+        config.targetPackage = "com.example.headjacklive"
+        open()
+
+        assertNull(startedActivity())
+    }
+
+    @Test
+    fun `does not open the app list again when the screen is only recreated`() {
+        open()
+        assertEquals(AppPickerActivity::class.java.name, startedActivity())
+
+        // The user backed out of the list without picking; then e.g. a Quest panel resize
+        controller.recreate()
+
+        assertNull(startedActivity())
     }
 }

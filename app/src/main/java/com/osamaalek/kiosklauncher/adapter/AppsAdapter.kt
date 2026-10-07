@@ -10,8 +10,10 @@ import com.osamaalek.kiosklauncher.R
 import com.osamaalek.kiosklauncher.model.AppInfo
 
 
+/** Rows of the app picker. The package name is shown because two apps can share a name. */
 class AppsAdapter(
     private val list: List<AppInfo>,
+    private val currentPackage: String,
     private val onAppClick: (AppInfo) -> Unit,
 ) : RecyclerView.Adapter<AppsAdapter.ContentHolder>() {
 
@@ -23,7 +25,9 @@ class AppsAdapter(
     override fun onBindViewHolder(holder: ContentHolder, position: Int) {
         val app = list[position]
         holder.textView.text = app.label
+        holder.packageView.text = app.packageName
         holder.imageView.setImageDrawable(app.icon)
+        holder.currentView.visibility = if (app.packageName == currentPackage) View.VISIBLE else View.GONE
         holder.itemView.setOnClickListener { onAppClick(app) }
     }
 
@@ -34,6 +38,8 @@ class AppsAdapter(
     class ContentHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
         val imageView: ImageView = itemView.findViewById(R.id.app_icon)
         val textView: TextView = itemView.findViewById(R.id.app_name)
+        val packageView: TextView = itemView.findViewById(R.id.app_package)
+        val currentView: TextView = itemView.findViewById(R.id.app_current)
     }
 
 }

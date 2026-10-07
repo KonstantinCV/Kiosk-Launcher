@@ -14,6 +14,8 @@ It doesn't need device owner, Meta Horizon managed services or a third-party MDM
 
 The loader UI shows the target app, lets you **choose another app**, launch it now, disable the watchdog, change the grace period (3 to 300 s), pause for 30 minutes, and see which one-time grants are missing.
 
+**Choosing the app:** on first launch, or whenever the stored target is no longer installed, the loader opens its app list by itself. The list scrolls and shows every launchable app with its icon, name and package name, including Quest VR apps and sideloaded (Unknown Sources) apps; the current target is marked *Current*. Tap one to make it the target. Backing out leaves the target unchanged, and **Choose app** opens the list again. Over adb, `SET_TARGET` (below) does the same.
+
 ## Setup on a Quest
 
 The headset needs developer mode and adb access, once, for the grants below. After that it runs on its own.

@@ -85,6 +85,12 @@ class MainActivity : LoaderActivity() {
         }
 
         adbCommands.text = adbSetupCommands()
+
+        // First launch, or the target was uninstalled: go straight to the app list. Not when the
+        // screen is only recreated, so backing out of the list leaves it closed.
+        if (savedInstanceState == null && !TargetLauncher.isInstalled(this, config.targetPackage)) {
+            startActivity(Intent(this, AppPickerActivity::class.java))
+        }
     }
 
     override fun onResume() {
