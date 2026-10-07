@@ -10,7 +10,7 @@ It doesn't need device owner, Meta Horizon managed services or a third-party MDM
 - **Watchdog:** every 2 seconds the service checks whether the target is in the foreground. It reads the activity events Android records for usage stats since boot, and counts the target as in front while any of its activities is resumed, even if another app's activity (a system menu, a second panel) is resumed alongside it. If the target has been out of the foreground for the grace period (10 s by default), it launches it again. This covers first boot, a normal exit and a crash.
 - **Sleep:** nothing happens while the headset is asleep (display off). The grace period restarts on wake.
 - **Crash loops:** after 5 launches in 3 minutes, the watchdog slows to one attempt per minute.
-- **Loader UI:** while the loader's own screens are open, the watchdog stands down, so an operator can change settings without the target being launched on top of them.
+- **Loader UI:** while an operator is using the loader's own screens, the watchdog stands down, so settings can be changed without the target being launched on top of them. A screen counts as in use only while it has focus and was touched in the last 2 minutes: on a Quest a 2D panel stays open beside the home environment until it is closed, and a panel left open after setup, or after a quick look, doesn't keep the target from coming back.
 
 The loader UI shows the target app, lets you **choose another app**, launch it now, disable the watchdog, change the grace period (3 to 300 s), pause for 30 minutes, and see which one-time grants are missing.
 
