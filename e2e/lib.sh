@@ -20,6 +20,7 @@ TARGET_PKG=com.osamaalek.kiosklauncher.testapp       # "launcher" flavor: MAIN +
 VR_TARGET_PKG=com.osamaalek.kiosklauncher.testapp.vr # "vr" flavor: MAIN + com.oculus.intent.category.VR only
 TARGET_RECEIVER=com.osamaalek.kiosklauncher.testapp.CommandReceiver
 TARGET_ACTIVITY=com.osamaalek.kiosklauncher.testapp.TargetActivity
+GUARDIAN_PKG=com.oculus.guardian
 TARGET_ACTION=com.osamaalek.kiosklauncher.testapp.action
 TARGET_TAG=E2ETarget
 RUNNER_TAG=E2ERunner
@@ -593,6 +594,23 @@ has_pid() {
 # alone may come back empty.
 in_front_and_running() {
     is_foreground "$1" && has_pid "$1"
+}
+
+guardian_in_front() {
+    is_foreground "$GUARDIAN_PKG"
+}
+
+guardian_closed() {
+    ! guardian_in_front
+}
+
+# wait_guardian_closed TIMEOUT_S: on a Quest, Horizon OS shows its Guardian (boundary) dialog when
+# the headset wakes without tracking, and holds every launch up until a person in the headset
+# confirms it. Waits for that; returns 1 if it is still open after TIMEOUT_S. No-op elsewhere.
+wait_guardian_closed() {
+    guardian_in_front || return 0
+    step "Horizon OS shows its Guardian dialog; confirm the boundary in the headset (waiting up to $1 s)"
+    wait_until "$1" guardian_closed
 }
 
 package_installed() {
