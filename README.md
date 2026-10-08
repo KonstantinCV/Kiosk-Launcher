@@ -40,6 +40,7 @@ The script installs the loader and grants it:
 | `appops set <pkg> SYSTEM_ALERT_WINDOW allow` | Android 10+ blocks apps from starting activities from the background. This grant exempts the loader. Device owner is an alternative exemption. |
 | `appops set <pkg> GET_USAGE_STATS allow` | Lets the watchdog see the foreground app, to detect exits and crashes. Without it, the target is brought back to the front every 30 s instead. |
 | `dumpsys deviceidle whitelist +<pkg>` | Keeps battery optimisation from stopping the service. |
+| `settings put global hide_error_dialogs 1` | Hides Android's "has stopped" and "isn't responding" dialogs. They wait for a tap, which nobody can give without a controller or hands; hidden, a crashed app just closes and the watchdog brings it back. |
 
 Right after the two `appops` grants it runs `appops write-settings`, which saves them to disk at once. Android otherwise saves app-op changes about 10 s later, so a reboot or power cut straight after provisioning would lose them. If saving fails, the script warns and carries on; then restart the headset only from its power menu (a clean shutdown saves them), not with `adb reboot` or a forced power-off.
 

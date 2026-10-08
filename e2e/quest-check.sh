@@ -372,7 +372,7 @@ provision_real_target() {
     done
     for cmd in "svc power stayon false" "locksettings set-disabled false" \
         "settings put global window_animation_scale 1" "settings put global transition_animation_scale 1" \
-        "settings put global animator_duration_scale 1" "settings delete global hide_error_dialogs" \
+        "settings put global animator_duration_scale 1" \
         "settings delete global show_first_crash_dialog" "settings delete secure show_first_crash_dialog_dev_option" \
         "settings delete secure anr_show_background"; do
         adb_shell "$cmd" >/dev/null 2>&1 || true
@@ -421,7 +421,8 @@ check_crash() {
     sleep 1
     back=$(watch_front 60) || true
     say "   $method: $TARGET $back"
-    record "3. Crash ($method)" "$TARGET $back" "$(relaunch_summary "$mark")"
+    record "3. Crash ($method)" "$TARGET $back" "$(relaunch_summary "$mark")" \
+        "you: no dialog to approve = $(ask_yn "Did it come back with no 'has stopped' dialog or anything to tap?")"
 }
 
 check_power_button() {

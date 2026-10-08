@@ -206,7 +206,7 @@ The checks assume the headset as users get it: no controllers (off and put away)
 |---|---|---|
 | 1 | Provision, then don't touch anything. | The target starts within about 45 s: the loader's screen, opened by provisioning, holds it back for 30 s, then the grace period. If Horizon OS shows its "controllers required" dialog instead, the target doesn't support starting without a controller: nobody can dismiss that dialog without one, so the target never starts. Only its vendor can change that (hand tracking support); the script warns up front when the target doesn't request hand tracking. |
 | 2 | `adb shell am force-stop <target package>` (nobody can quit it without a controller, but it can close by itself). | It comes back after the grace period (10 s). The log line reads `(foreground: <some package>)`, not `(foreground: unknown)`. |
-| 3 | `adb shell am crash <target package>`. | It comes back after the grace period. |
+| 3 | `adb shell am crash <target package>`. | It comes back after the grace period, with no "has stopped" dialog: provisioning hides those (`hide_error_dialogs`), since nobody could tap one away. |
 | 4 | Press the power button (display off), wait 15 s, press it again. | Nothing is launched while the display is off; after wake the target is still there, or comes back within the grace period once Guardian, if it shows, is gone. |
 | 5 | Take the headset off for 30 s, then put it back on. | The same. |
 | 6 | Open the loader with `adb shell am start -n com.osamaalek.kiosklauncher/.ui.MainActivity` and don't touch it. | Nothing is launched over it for 30 s; then the target comes back over it, since nobody can leave it without a controller. |

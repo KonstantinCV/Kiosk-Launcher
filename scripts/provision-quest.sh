@@ -40,6 +40,12 @@ if ! "${ADB[@]}" shell appops write-settings >/dev/null; then
 fi
 "${ADB[@]}" shell dumpsys deviceidle whitelist "+$LOADER" >/dev/null
 
+# Android's "<app> has stopped" and "isn't responding" dialogs wait for someone to tap them, which
+# nobody can without a controller or hands. With them hidden, a crashed app just closes and the
+# watchdog brings it back.
+echo "Hiding crash and not-responding dialogs..."
+"${ADB[@]}" shell settings put global hide_error_dialogs 1
+
 echo "Setting target to $TARGET..."
 "${ADB[@]}" shell am broadcast \
     -n "$LOADER/.receiver.AdminCommandReceiver" \
