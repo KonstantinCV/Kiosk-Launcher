@@ -610,7 +610,7 @@ guardian_closed() {
 # front after TIMEOUT_S. No-op elsewhere.
 wait_guardian_closed() {
     guardian_in_front || return 0
-    step "Horizon OS's Guardian is in front, which holds launches up; waiting up to $1 s for it to go (confirm the boundary if the headset shows one)"
+    step "Horizon OS reports its Guardian service in front (usually nothing is shown in the headset; nothing to do); waiting up to $1 s for it to go"
     wait_until "$1" guardian_closed
 }
 
