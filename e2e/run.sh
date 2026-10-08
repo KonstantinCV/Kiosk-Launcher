@@ -1281,7 +1281,7 @@ scenario_disable_enable() {
 # watchdog's own launch just before (hence the settle). 12 s asleep is still twice the grace
 # period, so a watchdog that ignored the display state would be caught.
 scenario_screen_off() {
-    local since wake_since
+    local since wake_since deadline guardian_seen=no
     ensure_launch_budget 1 || return 1
     require_target_foreground || return 1
     admin_cmd SET_GRACE --ei seconds "$SCREEN_OFF_GRACE" || return 1
@@ -1316,16 +1316,26 @@ scenario_screen_off() {
     step "waking the device"
     wake_device
     expect_within 10 "the display did not wake up" is_awake || return 1
-    # On a Quest, Guardian may come up on wake and hold launches up until it goes. The watchdog
+    # On a Quest, Guardian may come up on wake, sometimes more than once, and hold launches up
+    # until it goes: it needs tracking, so it can stay while the headset lies still. The watchdog
     # keeps launching meanwhile, but those launches must not use up its crash-loop budget: once
-    # Guardian is gone the target comes back, not throttled
-    if wait_until 5 guardian_in_front; then
-        if ! wait_guardian_closed "$GUARDIAN_WAIT_S"; then
-            fail "Horizon OS's Guardian was still in front ${GUARDIAN_WAIT_S} s after wake"
+    # Guardian is gone the target comes back, not throttled. So the wait is extended for as long
+    # as Guardian is what holds the target up, to at most GUARDIAN_WAIT_S.
+    deadline=$((SECONDS + GUARDIAN_WAIT_S))
+    while ! wait_until $((SCREEN_OFF_GRACE + BACK_TIMEOUT)) relaunched_since "$wake_since" "$TARGET_PKG"; do
+        if ! guardian_in_front; then break; fi
+        if ((SECONDS >= deadline)); then
+            fail "Horizon OS's Guardian was still in front ${GUARDIAN_WAIT_S} s after wake, holding the relaunch up (it needs tracking: wear the headset, or don't leave it lying still)"
             return 1
         fi
-        note "Guardian in front after wake, gone $(ts_diff "$(device_epoch)" "$wake_since") s after wake"
+        guardian_seen=yes
+        step "Guardian is in front and holds launches up; waiting for it to go"
+    done
+    if log_has "$wake_since" WatchdogService "keeps exiting, relaunch throttled"; then
+        fail "the relaunch after wake was throttled: launches Guardian held up used up the crash-loop budget"
+        return 1
     fi
+    if [[ $guardian_seen == yes ]]; then note "Guardian held the relaunch up after wake"; fi
     expect_relaunch "$wake_since" "$TARGET_PKG" $((SCREEN_OFF_GRACE + BACK_TIMEOUT)) "back after wake" || return 1
     admin_cmd SET_GRACE --ei seconds "$FAST_GRACE" || return 1
     expect_pref grace_seconds "$FAST_GRACE" || return 1
