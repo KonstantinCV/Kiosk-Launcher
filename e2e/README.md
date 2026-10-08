@@ -200,16 +200,19 @@ adb logcat -v time WatchdogService:I TargetLauncher:I AdminCommandReceiver:I Act
 
 A restart ends the log command. Start it again (without `adb logcat -c`) once the headset is back: logcat first prints what was logged since boot, so the boot launch is still captured, and `tee -a` appends to the same file.
 
+The checks assume the headset as users get it: no controllers (off and put away) and hand tracking off, so the only button anyone has is the headset's power button.
+
 | # | Do | Expect |
 |---|---|---|
-| 1 | Restart the headset from its power menu. | The target starts on its own shortly after the home environment appears: `Watchdog started`, then `Relaunching <target>`. |
-| 2 | Restart it with `adb reboot` (like a power cut). | The same. `adb shell appops get com.osamaalek.kiosklauncher` still shows `SYSTEM_ALERT_WINDOW: allow` and `GET_USAGE_STATS: allow`. |
-| 3 | Quit the target from its own menu. | It comes back after the grace period (10 s). The log line reads `(foreground: <some package>)`, not `(foreground: unknown)`. If it reads `unknown`, check `adb shell appops get com.osamaalek.kiosklauncher GET_USAGE_STATS`: with `allow`, Horizon reported no activity resumed after the exit, which is worth noting. |
-| 4 | `adb shell am crash <target package>` (or `am force-stop`). | It comes back after the grace period. |
-| 5 | Open the Meta (universal) menu over the target and leave it open for 15 s. | Note what happens: the menu may count as leaving the target, and the target is brought back over it after 10 s. Say whether that is acceptable. Right after opening the menu, `adb shell dumpsys usagestats \| grep -E 'ACTIVITY_(RESUMED\|PAUSED)' \| tail -5` shows how Horizon reports it. |
-| 6 | Take the headset off for 30 s, then put it back on. | Nothing is launched while the display is off; the target is still there, or comes back within the grace period. |
-| 7 | Open the loader from the app library and wait 15 s, then press the Meta button without closing its panel. | Nothing is launched over the loader's own screen while you use it. Once you leave it, the target comes back after the grace period even though the panel is still open (it only holds the watchdog back while it has focus and was opened or touched in the last 30 s). |
-| 8 | Start the target for the first time, before it has been granted its runtime permissions (if it asks for any), and leave its permission prompt open for 15 s. | Note whether the watchdog closes the prompt by relaunching the target. Installing the target with `adb install -g` grants those permissions up front, so no prompt appears. |
+| 1 | Provision, then don't touch anything. | The target starts within about 45 s: the loader's screen, opened by provisioning, holds it back for 30 s, then the grace period. If Horizon OS shows its "controllers required" dialog instead, the target doesn't support starting without a controller: nobody can dismiss that dialog without one, so the target never starts. Only its vendor can change that (hand tracking support); the script warns up front when the target doesn't request hand tracking. |
+| 2 | `adb shell am force-stop <target package>` (nobody can quit it without a controller, but it can close by itself). | It comes back after the grace period (10 s). The log line reads `(foreground: <some package>)`, not `(foreground: unknown)`. |
+| 3 | `adb shell am crash <target package>`. | It comes back after the grace period. |
+| 4 | Press the power button (display off), wait 15 s, press it again. | Nothing is launched while the display is off; after wake the target is still there, or comes back within the grace period once Guardian, if it shows, is gone. |
+| 5 | Take the headset off for 30 s, then put it back on. | The same. |
+| 6 | Open the loader with `adb shell am start -n com.osamaalek.kiosklauncher/.ui.MainActivity` and don't touch it. | Nothing is launched over it for 30 s; then the target comes back over it, since nobody can leave it without a controller. |
+| 7 | Hold the power button until the headset turns off, then press it to turn it on. | The target starts on its own shortly after the home environment appears: `Watchdog started`, then `Relaunching <target>`. |
+| 8 | Restart it with `adb reboot` (like a power cut). | The same. `adb shell appops get com.osamaalek.kiosklauncher` still shows `SYSTEM_ALERT_WINDOW: allow` and `GET_USAGE_STATS: allow`. |
+| 9 | Start the target for the first time, before it has been granted its runtime permissions (if it asks for any), and leave its permission prompt open for 15 s. | Note whether the watchdog closes the prompt by relaunching the target. Without a controller nobody can answer a prompt anyway: install the target with `adb install -g`, which grants those permissions up front. |
 
 By hand, send back `quest-checks.log`, the `e2e/results/` folder from the automated run, the headset's Horizon OS version (`adb shell getprop ro.build.display.id`) and a note per check. The script's zip has all of that.
 

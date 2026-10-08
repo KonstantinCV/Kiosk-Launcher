@@ -204,6 +204,17 @@ prox_off() {
     adb_shell am broadcast -a com.oculus.vrpowermanager.automation_disable >/dev/null 2>&1 || true
 }
 
+# controller_prompt_open: Horizon OS's "controllers required" launch check is open
+controller_prompt_open() {
+    adb_shell dumpsys activity activities 2>/dev/null | grep -q 'systemdialog\.launchcheck\.'
+}
+
+# hand_tracking_declared: the target asks for hand tracking, so Horizon OS may start it without
+# a controller
+hand_tracking_declared() {
+    adb_shell dumpsys package "$TARGET" 2>/dev/null | grep -q 'com.oculus.permission.HAND_TRACKING'
+}
+
 # watch_front TIMEOUT: waits for the target to be in front; prints the seconds it took, or
 # "not within TIMEOUT s (foreground: X)"
 watch_front() {
@@ -217,7 +228,11 @@ watch_front() {
         sleep 1
     done
     fg=$(foreground_pkg 2>/dev/null) || fg=""
-    echo "not in front within $timeout s (foreground: ${fg:-none})"
+    if controller_prompt_open; then
+        echo "not in front within $timeout s: Horizon OS shows its 'controllers required' dialog instead"
+    else
+        echo "not in front within $timeout s (foreground: ${fg:-none})"
+    fi
     return 1
 }
 
@@ -317,6 +332,8 @@ device_info() {
         adb_shell dumpsys package "$TARGET" 2>/dev/null |
             grep -E 'versionName|targetSdk|launchMode|android.permission|com.oculus' | sed 's/^ *//' | sort -u || true
         echo
+        echo "hand tracking requested: $(hand_tracking_declared && echo yes || echo no)"
+        echo
         echo "# How it is launched"
         echo "LAUNCHER: $(adb_shell cmd package resolve-activity --brief -a android.intent.action.MAIN \
             -c android.intent.category.LAUNCHER "$TARGET" 2>/dev/null | tail -1)"
@@ -368,30 +385,28 @@ provision_real_target() {
 
 check_first_start() {
     local mark result
-    pause_for "== Check 1: first start. The loader's screen is open on the headset. Don't close it:
-   press the Meta button to go to the home environment, leaving the panel open, then press Enter
-   here. $TARGET should start within about 45 s (the loader's screen holds it back for 30 s
-   after it was opened or last touched, then the grace period)." \
+    pause_for "== Check 1: first start. The loader's screen is open on the headset. Don't touch
+   anything: press Enter here. $TARGET should start within about 45 s (the loader's screen holds
+   it back for 30 s after it was opened, then the grace period)." \
         "1. First start after provisioning" || return 0
     mark=$(capture_mark)
-    result=$(watch_front 60) || true
+    result=$(watch_front 75) || true
     say "   $TARGET $result"
     record "1. First start after provisioning" "$TARGET $result" "$(relaunch_summary "$mark")" \
         "you: started by itself = $(ask_yn "Did $TARGET start by itself?")"
 }
-
-check_quit() {
-    local mark left back
-    pause_for "== Check 2: quit $TARGET from its own menu or from the Horizon taskbar, then press
-   Enter here right away. It should come back after about 10 s." "2. Quit" || return 0
+check_exit() {
+    local mark back
+    pause_for "== Check 2: $TARGET exits. Without a controller nobody can quit it, but it can still
+   close by itself; press Enter and the script stops it (am force-stop). It should come back
+   after about 10 s." "2. Exit (force-stop)" || return 0
     mark=$(capture_mark)
-    left=$(watch_leave 20) || true
+    force_stop "$TARGET"
     back=$(watch_front 60) || true
-    say "   $left; $TARGET $back"
-    record "2. Quit" "$left; $TARGET $back" "$(relaunch_summary "$mark")" \
+    say "   $TARGET $back"
+    record "2. Exit (force-stop)" "$TARGET $back" "$(relaunch_summary "$mark")" \
         "you: came back = $(ask_yn "Did $TARGET come back?")"
 }
-
 check_crash() {
     local mark out method back
     pause_for "== Check 3: a crash. Press Enter and the script crashes $TARGET over adb; it should
@@ -409,32 +424,31 @@ check_crash() {
     record "3. Crash ($method)" "$TARGET $back" "$(relaunch_summary "$mark")"
 }
 
-check_meta_menu() {
-    local mark timeline="" i fg
-    pause_for "== Check 4: the Meta menu. With $TARGET in front, press the Meta button once so the
-   menu opens over it, leave it open, and press Enter here. The script watches for 20 s." \
-        "4. Meta menu over the target" || return 0
+check_power_button() {
+    local mark timeline="" i w saw_off=no back
+    pause_for "== Check 4: the headset's power button, the only button a user has. Press Enter,
+   then press the power button once (the display turns off), wait about 15 s, and press it once
+   more to wake the headset. The script follows the display for up to 90 s." \
+        "4. Power button: sleep and wake" || return 0
     mark=$(capture_mark)
-    {
-        echo "# dumpsys usagestats right after the Meta menu opened (last activity events)"
-        adb_shell dumpsys usagestats 2>/dev/null | grep -E 'ACTIVITY_(RESUMED|PAUSED|STOPPED)' | tail -40 || true
-        echo "# foreground: $(foreground_pkg)"
-        echo "# dumpsys activity activities (resumed)"
-        adb_shell dumpsys activity activities 2>/dev/null | grep -E 'Resumed|resumed|mFocused' || true
-    } >"$OUT/meta-menu.txt"
-    for ((i = 0; i < 20; i += 2)); do
-        fg=$(foreground_pkg 2>/dev/null) || fg=""
-        timeline+="${i}s:${fg:-none} "
-        sleep 2
+    for ((i = 0; i < 90; i += 3)); do
+        w=$(wakefulness 2>/dev/null) || w=""
+        timeline+="${i}s:${w:-?} "
+        if [[ $w == Asleep || $w == Dozing ]]; then saw_off=yes; fi
+        if [[ $saw_off == yes && $w == Awake ]]; then break; fi
+        sleep 3
     done
-    say "   foreground every 2 s: $timeline"
-    record "4. Meta menu over the target" "foreground every 2 s: $timeline" "$(relaunch_summary "$mark")" \
-        "you: target came back over the menu = $(ask_yn "Did $TARGET come back over the menu by itself?")" \
-        "you: acceptable = $(ask_yn "Is that behaviour acceptable for your use?")" \
-        "you: note = $(ask "Anything else you noticed (Enter to skip)?")" \
-        "usage events and activity dump: meta-menu.txt"
+    say "   display state every 3 s: $timeline"
+    if [[ $saw_off == no ]]; then
+        record "4. Power button: sleep and wake" "the display did not turn off: $timeline"
+        return 0
+    fi
+    back=$(watch_front 60) || true
+    say "   after wake: $TARGET $back"
+    record "4. Power button: sleep and wake" "display state every 3 s: $timeline" \
+        "after wake: $TARGET $back" "$(relaunch_summary "$mark")" \
+        "you: as expected = $(ask_yn "Was $TARGET back within about 15 s of waking, with nothing to do?")"
 }
-
 check_headset_off() {
     local mark timeline="" i back
     prox_off
@@ -460,22 +474,22 @@ check_headset_off() {
 }
 
 check_loader_ui() {
-    local mark stays fg back
-    pause_for "== Check 6: the loader's own screen. Press Enter and the script opens it; nothing
-   should be launched over it for 15 s." "6. Loader screen open" || return 0
+    local mark early back
+    pause_for "== Check 6: the loader's own screen, left open. Press Enter and the script opens it;
+   don't touch it. Nothing is launched over it at first, but nobody can leave it without a
+   controller, so $TARGET comes back over it within about 45 s." "6. Loader screen left open" || return 0
     mark=$(capture_mark)
     adb_shell am start -n "$LOADER_MAIN" >/dev/null 2>&1 || true
     sleep 15
-    fg=$(foreground_pkg 2>/dev/null) || fg=""
-    stays="foreground after 15 s: ${fg:-none}; $(relaunch_summary "$mark")"
-    say "   $stays"
-    pause_for "   Now press the Meta button, leaving the loader's panel open, and press Enter;
-   $TARGET should come back." || true
+    if is_foreground "$TARGET" 2>/dev/null && [[ -n "$(relaunch_lines "$mark")" ]]; then
+        early="relaunched within 15 s, over the loader's screen"
+    else
+        early="nothing launched in the first 15 s"
+    fi
     back=$(watch_front 60) || true
-    say "   $TARGET $back"
-    record "6. Loader screen open" "$stays" "after leaving it open: $TARGET $back"
+    say "   $early; then $TARGET $back"
+    record "6. Loader screen left open" "$early" "then $TARGET $back" "$(relaunch_summary "$mark")"
 }
-
 check_restart() {
     local how=$1 title=$2 mark old took result
     mark=$(capture_mark)
@@ -485,8 +499,9 @@ check_restart() {
    (like a power cut). Then wait; the script times the start." "$title" || return 0
         adb_ reboot >/dev/null 2>&1 || true
     else
-        pause_for "== Check $title: restart the headset from its power menu (hold the power button,
-   Restart), then press Enter here right away. The script times the start." "$title" || return 0
+        pause_for "== Check $title: turn the headset off with its power button: hold it until the
+   headset turns off (if a power menu appears, keep holding). Then press the power button once to
+   turn it on, and press Enter here right away. The script times the start." "$title" || return 0
     fi
     say "   waiting for the headset to boot and adb to come back (up to 15 minutes)..."
     if ! took=$(wait_boot "$old" 900); then
@@ -554,6 +569,12 @@ main() {
     if device_is_emulator; then say "Note: this is an emulator, not a headset."; fi
     target_installed || die "$TARGET is not installed on the headset. Install it first (adb install -g <apk> also grants its permissions)."
     device_info
+    if ! hand_tracking_declared; then
+        say "Note: $TARGET doesn't ask for hand tracking. Horizon OS may then refuse to start it"
+        say "without an active controller, showing its 'controllers required' dialog instead. The"
+        say "checks report it if that happens."
+    fi
+    say "Set the headset up as users get it: controllers off and away, hand tracking off."
 
     if [[ $(ask_yn "Keep the display on while nobody wears the headset (undone at the end and for check 5)?") == y ]]; then
         PROX_OVERRIDE=yes
@@ -567,12 +588,12 @@ main() {
     say ""
     say "== Part C: the checks. Each one says what to do; s skips it."
     check_first_start
-    check_quit
+    check_exit
     check_crash
-    check_meta_menu
+    check_power_button
     check_headset_off
     check_loader_ui
-    check_restart power "7. Restart from the power menu"
+    check_restart power "7. Power off and on with the power button"
     check_restart adb "8. adb reboot"
     check_permission_prompt
 
