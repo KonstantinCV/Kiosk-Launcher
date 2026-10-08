@@ -51,18 +51,17 @@ class LoaderActivityTest {
     }
 
     @Test
-    fun `a screen that lost focus but stays resumed does not`() {
-        // The Meta button: the Horizon home takes focus, the loader panel stays open and resumed
+    fun `focus doesn't matter, only use`() {
+        // On a Quest without a controller the panel never gets the focus; it is still the
+        // operator's screen until it has gone untouched for the idle timeout
         controller.topActivityResumed(false)
-        assertFalse(LoaderActivity.isVisible)
-
-        // Back to the panel
-        controller.topActivityResumed(true)
         assertTrue(LoaderActivity.isVisible)
+        advance(Duration.ofMillis(LoaderActivity.IDLE_TIMEOUT_MS + 1_000))
+        assertFalse(LoaderActivity.isVisible)
     }
 
     @Test
-    fun `a focused screen nobody touches stops holding it back after the idle timeout`() {
+    fun `a screen nobody touches stops holding it back after the idle timeout`() {
         advance(Duration.ofMillis(LoaderActivity.IDLE_TIMEOUT_MS - 1_000))
         assertTrue(LoaderActivity.isVisible)
 
@@ -84,24 +83,21 @@ class LoaderActivityTest {
     }
 
     @Test
-    fun `the system resuming the screen again does not count as use`() {
-        // Horizon OS backgrounds the panel (Guardian, an immersive app) and brings it back later
+    fun `the system resuming, refocusing or recreating the screen does not count as use`() {
+        // Horizon OS backgrounds the panel (Guardian, an immersive app) and brings it back later,
+        // sometimes rebuilt with a new configuration
         advance(Duration.ofMillis(LoaderActivity.IDLE_TIMEOUT_MS + 1_000))
         controller.pause()
         controller.topActivityResumed(false)
         controller.resume()
         controller.topActivityResumed(true)
         assertFalse(LoaderActivity.isVisible)
-    }
 
-    @Test
-    fun `opening the screen again counts as use`() {
-        advance(Duration.ofMillis(LoaderActivity.IDLE_TIMEOUT_MS + 1_000))
+        controller.newIntent(Intent(context, MainActivity::class.java))
         assertFalse(LoaderActivity.isVisible)
 
-        // Launched from the app library while still open (singleTask)
-        controller.newIntent(Intent(context, MainActivity::class.java))
-        assertTrue(LoaderActivity.isVisible)
+        controller.recreate()
+        assertFalse(LoaderActivity.isVisible)
     }
 
     @Test

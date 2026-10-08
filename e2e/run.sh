@@ -42,6 +42,7 @@ BACK_TIMEOUT=${E2E_BACK_TIMEOUT:-30} # the target comes back after an exit (grac
 FAST_GRACE=3                         # grace period used by the scenarios, for speed
 STAND_DOWN_S=12                      # how long "nothing happens" is watched
 SCREEN_OFF_GRACE=6                   # see scenario_screen_off
+LOADER_UI_HOLD_S=30                  # LoaderActivity.IDLE_TIMEOUT_MS
 GUARDIAN_WAIT_S=180                  # for a Quest's Guardian to go away
 LONG_GRACE=12                        # see scenario_grace_period
 LONG_GRACE_MAX=18                    # its relaunch: 12 s from the first tick after the exit, + slack
@@ -634,7 +635,7 @@ capture_failure_artifacts() {
 # restore_sane_state: best effort after a failure, so the next scenario starts from the usual
 # state: target = launcher test app, enabled, not paused, grace 3 s, usage access, screen on
 restore_sane_state() {
-    local used
+    local used opened_at=0
     if ! device_online; then
         step "the device is offline, nothing to restore"
         return 0
@@ -660,10 +661,11 @@ restore_sane_state() {
     if ((used >= MAX_LAUNCHES)) || ! watchdog_running; then
         # A new service instance: running, and with an empty launch backoff
         force_stop "$LOADER_PKG"
+        opened_at=$SECONDS
         open_loader_ui || true
         wait_until 30 watchdog_running || true
     fi
-    if is_foreground "$LOADER_PKG"; then press_key KEYCODE_HOME; fi
+    if is_foreground "$LOADER_PKG"; then leave_loader_ui "$opened_at"; fi
     if ! wait_until 30 is_foreground "$TARGET_PKG"; then
         # A 2D app left resumed beside the Horizon OS home isn't relaunched; bring it to front
         if has_pid "$TARGET_PKG" && bring_target_front; then return 0; fi
@@ -812,14 +814,31 @@ new_boot_ready() { # OLD_BOOT_ID
 # WatchdogService with an empty launch history. Then presses HOME, so the target comes back,
 # unless "ui" is given.
 restart_watchdog() {
+    local opened_at
     force_stop "$LOADER_PKG"
     expect_within 15 "WatchdogService still running after am force-stop" watchdog_stopped || return 1
+    opened_at=$SECONDS
     open_loader_ui || {
         fail "the loader UI did not open"
         return 1
     }
     expect_within 30 "WatchdogService did not start with the loader UI" watchdog_running || return 1
-    if [[ ${1:-} != ui ]]; then press_key KEYCODE_HOME; fi
+    if [[ ${1:-} != ui ]]; then leave_loader_ui "$opened_at"; fi
+}
+
+# leave_loader_ui OPENED_AT: HOME, away from the loader UI opened at OPENED_AT ($SECONDS). On a
+# Quest its panel stays open beside the home, and an open loader screen holds the watchdog back
+# for LOADER_UI_HOLD_S after it was opened: that is waited out, so the next scenario's relaunch
+# isn't held up by it.
+leave_loader_ui() {
+    local left
+    press_key KEYCODE_HOME
+    if device_is_emulator || ! is_foreground "$LOADER_PKG"; then return 0; fi
+    left=$((${1:-$SECONDS} + LOADER_UI_HOLD_S + 2 - SECONDS))
+    if ((left > 0)); then
+        step "the loader's panel stays open beside the home; waiting ${left} s for its ${LOADER_UI_HOLD_S} s hold to end"
+        sleep "$left"
+    fi
 }
 
 # ensure_launch_budget N [ui]: makes sure the watchdog can launch N more times without being
@@ -1160,10 +1179,11 @@ scenario_relaunch_after_home() {
     }
     step "pressing HOME"
     press_key KEYCODE_HOME
-    expect_within 15 "the target did not leave the foreground after HOME" \
-        target_left_since "$since" "$TARGET_PKG" || return 1
-    if ! wait_until 5 log_has "$since" "$TARGET_TAG" "$(target_event_re PAUSED "$TARGET_PKG")" &&
-        has_pid "$TARGET_PKG"; then
+    if ! wait_until 15 log_has "$since" "$TARGET_TAG" "$(target_event_re PAUSED "$TARGET_PKG")"; then
+        if ! has_pid "$TARGET_PKG"; then
+            fail "after HOME the target neither logged a pause nor kept running"
+            return 1
+        fi
         # Horizon OS keeps a 2D app resumed as a panel beside the home: it never left, so there is
         # nothing to relaunch. The watchdog must leave it alone, as it does any target in front.
         expect_stays_away "$since" "$STAND_DOWN_S" "while it stayed resumed as a panel beside the home" || return 1
