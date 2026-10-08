@@ -352,7 +352,12 @@ run_suite() {
     say "   or the proximity sensor covered, unless you chose to keep the display on."
     say "   After the screen-off scenario wakes it, Horizon OS may report its Guardian service in front"
     say "   for a while, usually with nothing shown in the headset. Nothing to do: the suite waits."
-    if bash "$E2E_DIR/run.sh" --allow-real-device --skip reboot --serial "$E2E_SERIAL" \
+    # Not reboot (checks 7 and 8 do that with the real target), and not the two scenarios about the
+    # loader's own screen: without a controller nobody uses it, and Horizon OS backgrounds and
+    # rebuilds its panel by itself (Guardian, recentering), so they test Horizon more than the
+    # loader. Check 1 covers the first start and check 6 the screen left open, with the real target.
+    if bash "$E2E_DIR/run.sh" --allow-real-device --skip reboot,loader-ui-stands-down,launches-target \
+        --serial "$E2E_SERIAL" \
         --loader-apk "$LOADER_APK" --target-apk "$TEST_APK" --vr-target-apk "$VR_TEST_APK" \
         --results "$OUT/suite" </dev/null; then
         record "Automated suite" "all scenarios passed (suite/summary.md)"

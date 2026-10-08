@@ -187,7 +187,7 @@ e2e/quest-check.sh --target <your app's package> --loader-apk app-debug.apk \
     --target-apk testapp-launcher-debug.apk --vr-target-apk testapp-vr-debug.apk
 ```
 
-The APKs are a local build's by default, or the `app-debug` and `e2e-target-apks` artifacts of a CI run as above. `--provision-apk app-release.apk` leaves the signed release build on the headset instead of the debug one, `--skip-suite` runs only the checks, and `s` skips a check. It takes about 30 minutes.
+The suite part skips `reboot`, `loader-ui-stands-down` and `launches-target`: checks 7 and 8 restart the headset with the real target, and without a controller nobody uses the loader's own screen while Horizon OS backgrounds and rebuilds its panel by itself, so checks 1 and 6 cover it with the real target instead. CI still runs all three on the emulators. The APKs are a local build's by default, or the `app-debug` and `e2e-target-apks` artifacts of a CI run as above. `--provision-apk app-release.apk` leaves the signed release build on the headset instead of the debug one, `--skip-suite` runs only the checks, and `s` skips a check. It takes about 30 minutes.
 
 After a restart a Quest may come back with adb `unauthorized` and no prompt in front. The restart checks wait up to 15 minutes for adb and say what to do (the prompt is often under notifications; tick *Always allow from this computer*; replug the cable; as a last resort turn developer mode off and on in the Meta Horizon app). When adb is back they read from the headset's own log how long after boot the watchdog started and first launched the target, so a late reconnect still gives the boot timing, unless logcat has rotated it out by then.
 
