@@ -14,7 +14,9 @@ import androidx.appcompat.app.AppCompatActivity
  * Horizon OS resumes such a panel again by itself, for example when Guardian or an immersive app
  * lets go of the view. So a screen only counts while it is resumed and focused and a person
  * opened or touched it within [IDLE_TIMEOUT_MS]: opening it (onCreate, or onNewIntent when it is
- * already open) or any input counts, being resumed again does not.
+ * already open) or any input counts, being resumed again does not. Short, because on a Quest every
+ * panel keeps focus on its own display, so leaving the panel isn't reported: an untouched panel
+ * holds the target back for that long after it was last used.
  */
 abstract class LoaderActivity : AppCompatActivity() {
 
@@ -52,7 +54,7 @@ abstract class LoaderActivity : AppCompatActivity() {
 
     companion object {
         /** How long an untouched, focused loader screen keeps the watchdog standing down. */
-        const val IDLE_TIMEOUT_MS = 2 * 60_000L
+        const val IDLE_TIMEOUT_MS = 30_000L
 
         @Volatile
         private var resumed = false

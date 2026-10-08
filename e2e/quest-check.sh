@@ -209,13 +209,14 @@ prox_off() {
 watch_front() {
     local timeout=$1 start=$SECONDS fg=""
     while ((SECONDS - start <= timeout)); do
-        fg=$(foreground_pkg 2>/dev/null) || fg=""
-        if [[ $fg == "$TARGET" ]]; then
+        # Resumed on any display: on a Quest the focused display is often the home's
+        if is_foreground "$TARGET" 2>/dev/null; then
             echo "in front after $((SECONDS - start)) s"
             return 0
         fi
         sleep 1
     done
+    fg=$(foreground_pkg 2>/dev/null) || fg=""
     echo "not in front within $timeout s (foreground: ${fg:-none})"
     return 1
 }
@@ -224,8 +225,8 @@ watch_front() {
 watch_leave() {
     local timeout=$1 start=$SECONDS fg=""
     while ((SECONDS - start <= timeout)); do
-        fg=$(foreground_pkg 2>/dev/null) || fg=""
-        if [[ $fg != "$TARGET" ]]; then
+        if ! is_foreground "$TARGET" 2>/dev/null; then
+            fg=$(foreground_pkg 2>/dev/null) || fg=""
             echo "left after $((SECONDS - start)) s (foreground: ${fg:-none})"
             return 0
         fi
@@ -369,7 +370,8 @@ check_first_start() {
     local mark result
     pause_for "== Check 1: first start. The loader's screen is open on the headset. Don't close it:
    press the Meta button to go to the home environment, leaving the panel open, then press Enter
-   here. $TARGET should start within about 15 s." \
+   here. $TARGET should start within about 45 s (the loader's screen holds it back for 30 s
+   after it was opened or last touched, then the grace period)." \
         "1. First start after provisioning" || return 0
     mark=$(capture_mark)
     result=$(watch_front 60) || true
