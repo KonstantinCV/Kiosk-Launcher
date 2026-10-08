@@ -1,6 +1,7 @@
 package com.osamaalek.kiosklauncher.ui
 
 import android.app.Application
+import android.content.Intent
 import android.os.Looper
 import com.osamaalek.kiosklauncher.util.LoaderConfig
 import com.osamaalek.kiosklauncher.util.TestApps
@@ -79,6 +80,27 @@ class LoaderActivityTest {
             advance(Duration.ofMillis(LoaderActivity.IDLE_TIMEOUT_MS / 2))
             controller.get().onUserInteraction()
         }
+        assertTrue(LoaderActivity.isVisible)
+    }
+
+    @Test
+    fun `the system resuming the screen again does not count as use`() {
+        // Horizon OS backgrounds the panel (Guardian, an immersive app) and brings it back later
+        advance(Duration.ofMillis(LoaderActivity.IDLE_TIMEOUT_MS + 1_000))
+        controller.pause()
+        controller.topActivityResumed(false)
+        controller.resume()
+        controller.topActivityResumed(true)
+        assertFalse(LoaderActivity.isVisible)
+    }
+
+    @Test
+    fun `opening the screen again counts as use`() {
+        advance(Duration.ofMillis(LoaderActivity.IDLE_TIMEOUT_MS + 1_000))
+        assertFalse(LoaderActivity.isVisible)
+
+        // Launched from the app library while still open (singleTask)
+        controller.newIntent(Intent(context, MainActivity::class.java))
         assertTrue(LoaderActivity.isVisible)
     }
 

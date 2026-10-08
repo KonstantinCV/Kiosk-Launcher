@@ -1,5 +1,7 @@
 package com.osamaalek.kiosklauncher.ui
 
+import android.content.Intent
+import android.os.Bundle
 import android.os.SystemClock
 import androidx.appcompat.app.AppCompatActivity
 
@@ -8,24 +10,34 @@ import androidx.appcompat.app.AppCompatActivity
  *
  * Being resumed isn't enough to count as in use. On a Quest a 2D panel stays open and resumed
  * beside the Horizon home and other panels until it is closed, so a loader panel left open after
- * provisioning, or after a quick look, would keep the watchdog idle until the next reboot. So a
- * screen only counts while it is the top resumed (focused) activity and was touched within
- * [IDLE_TIMEOUT_MS].
+ * provisioning, or after a quick look, would keep the watchdog idle until the next reboot. And
+ * Horizon OS resumes such a panel again by itself, for example when Guardian or an immersive app
+ * lets go of the view. So a screen only counts while it is resumed and focused and a person
+ * opened or touched it within [IDLE_TIMEOUT_MS]: opening it (onCreate, or onNewIntent when it is
+ * already open) or any input counts, being resumed again does not.
  */
 abstract class LoaderActivity : AppCompatActivity() {
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        lastUsedAt = SystemClock.elapsedRealtime()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        lastUsedAt = SystemClock.elapsedRealtime()
+    }
 
     override fun onResume() {
         super.onResume()
         // A resumed screen is normally the top one too; Android reports it if it isn't
         resumed = true
         topResumed = true
-        lastUsedAt = SystemClock.elapsedRealtime()
     }
 
     override fun onTopResumedActivityChanged(isTopResumedActivity: Boolean) {
         super.onTopResumedActivityChanged(isTopResumedActivity)
         topResumed = isTopResumedActivity
-        if (isTopResumedActivity) lastUsedAt = SystemClock.elapsedRealtime()
     }
 
     override fun onUserInteraction() {

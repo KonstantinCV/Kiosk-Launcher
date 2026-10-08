@@ -147,6 +147,21 @@ parse_resumed_package() {
     '
 }
 
+# parse_top_resumed_packages < `dumpsys activity activities`: the package of the top resumed
+# activity of every display, one per line. On a Quest each 2D panel has a display of its own, so
+# an app can be resumed, and shown, while another display (the home's) has the focus.
+parse_top_resumed_packages() {
+    awk '
+        /^[ \t]*topResumedActivity[ \t]*[=:]/ {
+            if (match($0, "ActivityRecord[{][^}]* u[0-9]+ [^ /}]+/")) {
+                s = substr($0, RSTART, RLENGTH - 1)
+                sub(/.* u[0-9]+ /, "", s)
+                print s
+            }
+        }
+    '
+}
+
 # parse_focused_package < `dumpsys window`: the package of the focused window (mCurrentFocus),
 # else of the focused app (mFocusedApp). Fallback for parse_resumed_package.
 parse_focused_package() {
@@ -568,7 +583,12 @@ foreground_pkg() {
     printf '%s\n' "$pkg"
 }
 
+# is_foreground PKG: PKG is the top resumed app of a display: the one in front on an emulator or
+# phone, or one of the panels shown on a Quest. That is what the watchdog counts as in front too.
 is_foreground() {
+    local out
+    out=$(adb_shell dumpsys activity activities 2>/dev/null) || out=""
+    if printf '%s\n' "$out" | parse_top_resumed_packages | grep -qxF "$1"; then return 0; fi
     [[ "$(foreground_pkg)" == "$1" ]]
 }
 
@@ -596,8 +616,9 @@ in_front_and_running() {
     is_foreground "$1" && has_pid "$1"
 }
 
+# guardian_in_front: Guardian has the focus (not just a display of its own)
 guardian_in_front() {
-    is_foreground "$GUARDIAN_PKG"
+    [[ "$(foreground_pkg)" == "$GUARDIAN_PKG" ]]
 }
 
 guardian_closed() {
