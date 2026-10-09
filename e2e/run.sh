@@ -1736,7 +1736,9 @@ crash_loop_steps() {
     step "pressing HOME: launch 1"
     press_key KEYCODE_HOME
     E2E_FAIL_PREFIX="launch 1: "
-    expect_relaunch "$since" "$TARGET_PKG" "$BACK_TIMEOUT" "" || return 1
+    # On a Quest the loader's panel stays open beside the home after HOME, and holds the watchdog
+    # back for LOADER_UI_HOLD_S after it was opened
+    expect_relaunch "$since" "$TARGET_PKG" $((BACK_TIMEOUT + LOADER_UI_HOLD_S)) "" || return 1
     for ((n = 1; n <= MAX_LAUNCHES; n++)); do
         crash_target "$n" "$RELAUNCH_TS" || return 1
         if ((n == MAX_LAUNCHES)); then break; fi
