@@ -106,7 +106,8 @@ jobs:
         else
           cp app/build/outputs/apk/debug/app-debug.apk kiosk-loader-installer/kiosk-loader.apk
         fi
-        cp installer/install.sh installer/README.txt scripts/provision-quest.sh kiosk-loader-installer/
+        cp installer/install.sh installer/install.ps1 installer/install.bat installer/README.txt \
+           scripts/provision-quest.sh kiosk-loader-installer/
 
     - name: Upload the installer
       uses: actions/upload-artifact@v4

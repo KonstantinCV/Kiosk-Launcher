@@ -6,33 +6,38 @@ closes or crashes. Built for headsets that users get without controllers or hand
 
 What's in this folder
   kiosk-loader.apk     the loader
-  install.sh           sets up one headset (macOS or Linux)
+  install.bat          sets up one headset on Windows (double-click it)
+  install.ps1          used by install.bat
+  install.sh           sets up one headset on macOS or Linux
   provision-quest.sh   used by install.sh
 
 You need
-  - adb (Android platform tools). macOS: brew install --cask android-platform-tools
+  - adb (Android platform tools).
+      Windows: download "SDK Platform-Tools for Windows" from
+               https://developer.android.com/tools/releases/platform-tools and unzip it into
+               this folder, so there is a platform-tools folder next to install.bat
+      macOS:   brew install --cask android-platform-tools
   - On the headset: developer mode on (Meta Horizon phone app > the headset > Developer mode)
   - The app to keep running, already installed on the headset
 
 Set up a headset
   1. Connect it with a USB cable, put it on, and allow USB debugging. Tick
      "Always allow from this computer", so restarts don't lose the connection.
-  2. In this folder, run:
-
-       bash install.sh
-
+  2. Windows: double-click install.bat.   macOS / Linux: in this folder, run  bash install.sh
      It lists the apps on the headset; type the number of the one to keep running.
      Or name it, and set how long it may be gone before it is started again (0 to 60 s):
 
-       bash install.sh --target com.example.app --grace 3
+       Windows (command prompt in this folder):  install.bat -Target com.example.app -Grace 3
+       macOS / Linux:                            bash install.sh --target com.example.app --grace 3
 
-     With more than one headset connected, add --serial <serial> (see: adb devices).
+     With more than one headset connected, add -Serial <serial> / --serial <serial>
+     (see: adb devices).
   3. On the headset, once: turn the boundary (Guardian) off in Settings, and, if users get it
      that way, hand tracking off and the controllers away.
   4. Restart the headset (hold the power button until it turns off, then turn it on). The app
      should start by itself.
 
-What install.sh changes on the headset
+What the installer changes on the headset
   - Installs the loader and lets it start apps from the background and see which app is in front
   - Keeps battery saving from stopping it
   - Hides Android's "has stopped" / "isn't responding" dialogs, which nobody could tap away

@@ -21,7 +21,7 @@ The loader UI shows the target app, lets you **choose another app**, launch it n
 
 ## Setup on a Quest
 
-**Quickest:** download the `kiosk-loader-installer` artifact of the latest green CI run, unzip it and run `bash install.sh` with the headset connected. It lists the apps on the headset, sets the loader up for the one you pick (`--target <package>`, `--grace <0-60>` to skip the questions) and checks the result. Its `README.txt` covers the rest. What it runs is the provisioning below.
+**Quickest:** download the `kiosk-loader-installer` artifact of the latest green CI run, unzip it and, with the headset connected, double-click `install.bat` on Windows or run `bash install.sh` on macOS or Linux. It lists the apps on the headset, sets the loader up for the one you pick (`-Target`/`--target <package>`, `-Grace`/`--grace <0-60>` to skip the questions) and checks the result. Its `README.txt` covers the rest. What it runs is the provisioning below.
 
 The headset needs developer mode and adb access, once, for the grants below. After that it runs on its own.
 
