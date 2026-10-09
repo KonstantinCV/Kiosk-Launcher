@@ -216,21 +216,21 @@ class AdminCommandReceiverTest {
     }
 
     @Test
-    fun `SET_GRACE accepts 3 and 300 seconds`() {
-        assertEquals(ok, send(ACTION_SET_GRACE) { putExtra(EXTRA_SECONDS, 3) })
-        assertEquals(3, config.graceSeconds)
+    fun `SET_GRACE accepts 0 and 60 seconds`() {
+        assertEquals(ok, send(ACTION_SET_GRACE) { putExtra(EXTRA_SECONDS, 0) })
+        assertEquals(0, config.graceSeconds)
 
-        assertEquals(ok, send(ACTION_SET_GRACE) { putExtra(EXTRA_SECONDS, 300) })
-        assertEquals(300, config.graceSeconds)
+        assertEquals(ok, send(ACTION_SET_GRACE) { putExtra(EXTRA_SECONDS, 60) })
+        assertEquals(60, config.graceSeconds)
     }
 
     @Test
-    fun `SET_GRACE rejects values outside 3 to 300 seconds`() {
+    fun `SET_GRACE rejects values outside 0 to 60 seconds`() {
         config.graceSeconds = 20
 
-        for (seconds in listOf(-1, 0, 2, 301, 3600, Int.MAX_VALUE)) {
+        for (seconds in listOf(-1, 61, 300, 3600, Int.MIN_VALUE, Int.MAX_VALUE)) {
             assertEquals(
-                error("The grace period must be 3 to 300 seconds, got $seconds"),
+                error("The grace period must be 0 to 60 seconds, got $seconds"),
                 send(ACTION_SET_GRACE) { putExtra(EXTRA_SECONDS, seconds) },
             )
         }

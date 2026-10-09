@@ -17,7 +17,8 @@ class LoaderConfig(context: Context) {
         set(value) = prefs.edit().putBoolean(KEY_ENABLED, value).apply()
 
     var graceSeconds: Int
-        get() = prefs.getInt(KEY_GRACE, DEFAULT_GRACE_SECONDS)
+        // Clamped on reading too: a value stored by an older version may be outside today's range
+        get() = prefs.getInt(KEY_GRACE, DEFAULT_GRACE_SECONDS).coerceIn(MIN_GRACE_SECONDS, MAX_GRACE_SECONDS)
         set(value) = prefs.edit().putInt(KEY_GRACE, value.coerceIn(MIN_GRACE_SECONDS, MAX_GRACE_SECONDS)).apply()
 
     var pausedUntil: Long
@@ -34,7 +35,8 @@ class LoaderConfig(context: Context) {
         private const val KEY_PAUSED_UNTIL = "paused_until"
 
         const val DEFAULT_GRACE_SECONDS = 10
-        const val MIN_GRACE_SECONDS = 3
-        const val MAX_GRACE_SECONDS = 300
+        /** 0: relaunch on the first check (every 2 s) that finds the target gone. */
+        const val MIN_GRACE_SECONDS = 0
+        const val MAX_GRACE_SECONDS = 60
     }
 }

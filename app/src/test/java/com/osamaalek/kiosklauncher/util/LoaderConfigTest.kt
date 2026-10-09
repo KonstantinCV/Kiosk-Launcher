@@ -26,15 +26,21 @@ class LoaderConfigTest {
     }
 
     @Test
-    fun `clamps the grace period to 3 to 300 seconds`() {
-        val stored = listOf(-5, 0, 2, 3, 45, 300, 301, Int.MAX_VALUE).associateWith {
+    fun `clamps the grace period to 0 to 60 seconds`() {
+        val stored = listOf(-5, 0, 3, 45, 60, 61, 300, Int.MAX_VALUE).associateWith {
             config.graceSeconds = it
             config.graceSeconds
         }
         assertEquals(
-            mapOf(-5 to 3, 0 to 3, 2 to 3, 3 to 3, 45 to 45, 300 to 300, 301 to 300, Int.MAX_VALUE to 300),
+            mapOf(-5 to 0, 0 to 0, 3 to 3, 45 to 45, 60 to 60, 61 to 60, 300 to 60, Int.MAX_VALUE to 60),
             stored,
         )
+    }
+
+    @Test
+    fun `a grace period stored by an older version outside the range is read clamped`() {
+        context.getSharedPreferences("loader", Context.MODE_PRIVATE).edit().putInt("grace_seconds", 300).commit()
+        assertEquals(60, config.graceSeconds)
     }
 
     @Test

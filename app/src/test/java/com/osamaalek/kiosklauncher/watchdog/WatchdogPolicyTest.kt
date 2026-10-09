@@ -52,6 +52,14 @@ class WatchdogPolicyTest {
     }
 
     @Test
+    fun `with no grace period it relaunches on the first check that finds the target gone`() {
+        policy.tick(snapshot(now = 0, foreground = target).copy(graceMs = 0))
+        assertEquals(Decision.LAUNCH, policy.tick(snapshot(now = 2_000, foreground = home).copy(graceMs = 0)))
+        // Still not up on the next check: tried again, under the crash-loop guard
+        assertEquals(Decision.LAUNCH, policy.tick(snapshot(now = 4_000, foreground = home).copy(graceMs = 0)))
+    }
+
+    @Test
     fun `stays idle while the target is in the foreground`() {
         repeat(10) { i ->
             assertEquals(Decision.IDLE, policy.tick(snapshot(now = i * 5_000L, foreground = target)))

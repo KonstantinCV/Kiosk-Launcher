@@ -15,7 +15,7 @@ It doesn't need device owner, Meta Horizon managed services or a third-party MDM
 - **Crash loops:** after 5 launches in 3 minutes, the watchdog slows to one attempt per minute.
 - **Loader UI:** while an operator is using the loader's own screens, the watchdog stands down, so settings can be changed without the target being launched on top of them. A screen counts as in use only while it is open and was opened or touched in the last 30 seconds: on a Quest a 2D panel stays open beside the home environment until it is closed, and Horizon OS resumes, refocuses and even rebuilds such a panel by itself (after Guardian, or after an immersive app), so a panel left open after setup, or after a quick look, doesn't keep the target from coming back for longer than that. Focus doesn't count either way: without a controller a panel never gets it.
 
-The loader UI shows the target app, lets you **choose another app**, launch it now, disable the watchdog, change the grace period (3 to 300 s), pause for 30 minutes, and see which one-time grants are missing.
+The loader UI shows the target app, lets you **choose another app**, launch it now, disable the watchdog, change the grace period (0 to 60 s; 0 relaunches on the first check, within 2 s), pause for 30 minutes, and see which one-time grants are missing.
 
 **Choosing the app:** on first launch, or whenever the stored target is no longer installed, the loader opens its app list by itself. The list scrolls and shows every launchable app with its icon, name and package name, including Quest VR apps and sideloaded (Unknown Sources) apps; the current target is marked *Current*. Tap one to make it the target. Backing out leaves the target unchanged, and **Choose app** opens the list again. Over adb, `SET_TARGET` (below) does the same.
 
@@ -68,7 +68,7 @@ adb shell am broadcast -n $R -a $A.SET_GRACE --ei seconds 15
 
 - `SET_TARGET` with a package that isn't installed or has nothing to launch, or with the loader's own package. Spaces around the name are trimmed first.
 - `PAUSE` with `minutes` below 1, or not sent as an int (`--ei`). Without `minutes` it pauses for 30.
-- `SET_GRACE` with `seconds` missing, not sent as an int (`--ei`), or outside 3 to 300.
+- `SET_GRACE` with `seconds` missing, not sent as an int (`--ei`), or outside 0 to 60.
 
 A default target can also be built into the APK: `./gradlew assembleDebug -PloaderTargetPackage=com.example.headjackapp`.
 
