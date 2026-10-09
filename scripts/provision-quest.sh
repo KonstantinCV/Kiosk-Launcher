@@ -46,6 +46,14 @@ fi
 echo "Hiding crash and not-responding dialogs..."
 "${ADB[@]}" shell settings put global hide_error_dialogs 1
 
+# Without a PIN or password, Android still shows a lock screen after a restart that waits for a
+# tap. Turn it off, so the headset boots straight into Horizon OS and the target. This only works
+# while no PIN, pattern or password is set; with one, the headset keeps asking for it.
+echo "Turning the lock screen off..."
+if ! "${ADB[@]}" shell locksettings set-disabled true; then
+    echo "Warning: could not turn the lock screen off. If the headset has a PIN, pattern or password, remove it; nobody can enter it without a controller." >&2
+fi
+
 echo "Setting target to $TARGET..."
 "${ADB[@]}" shell am broadcast \
     -n "$LOADER/.receiver.AdminCommandReceiver" \

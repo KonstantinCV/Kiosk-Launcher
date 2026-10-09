@@ -375,7 +375,7 @@ provision_real_target() {
         # shellcheck disable=SC2086 # cmd is "uninstall <package>"
         adb_ $cmd >/dev/null 2>&1 || true
     done
-    for cmd in "svc power stayon false" "locksettings set-disabled false" \
+    for cmd in "svc power stayon false" \
         "settings put global window_animation_scale 1" "settings put global transition_animation_scale 1" \
         "settings put global animator_duration_scale 1" \
         "settings delete global show_first_crash_dialog" "settings delete secure show_first_crash_dialog_dev_option" \
@@ -521,7 +521,8 @@ check_restart() {
     say "   adb back ${took} s after the restart; $TARGET $result; $(boot_launch_line)"
     record "$title" "adb back ${took} s after the restart; $TARGET $result" "$(boot_launch_line)" "$(grants_line)" \
         "$(relaunch_summary "$mark")" \
-        "you: started by itself = $(ask_yn "Did $TARGET start by itself, with no input?")"
+        "you: started by itself = $(ask_yn "Did $TARGET start by itself, with no input?")" \
+        "you: no lock or login screen = $(ask_yn "Did the headset boot with no lock, login or account screen to get past?")"
 }
 
 check_permission_prompt() {
