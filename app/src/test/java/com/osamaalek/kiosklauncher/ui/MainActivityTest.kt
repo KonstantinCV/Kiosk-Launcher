@@ -110,25 +110,25 @@ class MainActivityTest {
 
     @Test
     fun `the grace slider covers the range the setting allows`() {
-        config.graceSeconds = 120
+        config.graceSeconds = 45
         open()
 
         assertEquals(LoaderConfig.MIN_GRACE_SECONDS, graceSeek.min)
         assertEquals(LoaderConfig.MAX_GRACE_SECONDS, graceSeek.max)
-        assertEquals(120, graceSeek.progress)
-        assertEquals(context.getString(R.string.grace_label, 120), graceText.text.toString())
+        assertEquals(45, graceSeek.progress)
+        assertEquals(context.getString(R.string.grace_label, 45), graceText.text.toString())
     }
 
     @Test
     fun `moving the grace slider stores what it shows`() {
-        config.graceSeconds = 120
+        config.graceSeconds = 45
         open()
 
         // One step down, the way the controller's or a keyboard's arrow key moves it
         graceSeek.onKeyDown(KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_LEFT))
 
         val shown = graceSeek.progress
-        assertTrue("slider at $shown, expected a step below 120", shown in 61 until 120)
+        assertTrue("slider at $shown, expected a step below 45", shown in 30 until 45)
         assertEquals(shown, config.graceSeconds)
         assertEquals(context.getString(R.string.grace_label, shown), graceText.text.toString())
     }
