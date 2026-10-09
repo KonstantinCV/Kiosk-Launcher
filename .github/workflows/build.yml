@@ -96,6 +96,25 @@ jobs:
         path: app/build/outputs/apk/release/app-release.apk
         if-no-files-found: error
 
+    # Everything needed to set up a headset, in one download: the loader (the signed release build
+    # when there is one, otherwise the debug build), the installer and the provisioning script
+    - name: Package the installer
+      run: |
+        mkdir -p kiosk-loader-installer
+        if [ -f app/build/outputs/apk/release/app-release.apk ]; then
+          cp app/build/outputs/apk/release/app-release.apk kiosk-loader-installer/kiosk-loader.apk
+        else
+          cp app/build/outputs/apk/debug/app-debug.apk kiosk-loader-installer/kiosk-loader.apk
+        fi
+        cp installer/install.sh installer/README.txt scripts/provision-quest.sh kiosk-loader-installer/
+
+    - name: Upload the installer
+      uses: actions/upload-artifact@v4
+      with:
+        name: kiosk-loader-installer
+        path: kiosk-loader-installer/
+        if-no-files-found: error
+
     # Test-only apps for the e2e job, flattened so the artifact holds just the two APKs
     - name: Collect E2E target APKs
       run: |

@@ -21,6 +21,8 @@ The loader UI shows the target app, lets you **choose another app**, launch it n
 
 ## Setup on a Quest
 
+**Quickest:** download the `kiosk-loader-installer` artifact of the latest green CI run, unzip it and run `bash install.sh` with the headset connected. It lists the apps on the headset, sets the loader up for the one you pick (`--target <package>`, `--grace <0-60>` to skip the questions) and checks the result. Its `README.txt` covers the rest. What it runs is the provisioning below.
+
 The headset needs developer mode and adb access, once, for the grants below. After that it runs on its own.
 
 1. Get the APK: `app-release` from the GitHub Actions run once [release signing](#release-signing) is set up, otherwise `app-debug` (or build it with `./gradlew assembleDebug`).
